@@ -27,5 +27,12 @@ node_modules/
 # Build artifacts
 dist/
 build/
-target/
+*.egg-info/
+.coverage
+coverage/
+htmlcov/
+
+# System files
+.DS_Store
+Thumbs.db
 ```
