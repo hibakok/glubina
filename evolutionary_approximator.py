@@ -161,6 +161,48 @@ class UnaryOperator(Node):
         return f"{self.symbol}({self.operand.to_string()})"
 
 
+class ConditionalNode(Node):
+    """Условный узел (If-Then-Else).
+    
+    Содержит три дочерних узла:
+    - condition: условие (вычисляется как число, > 0 означает true)
+    - then_branch: ветка "тогда" (выполняется если условие > 0)
+    - else_branch: ветка "иначе" (выполняется если условие <= 0)
+    """
+    
+    def __init__(self, condition: Node, then_branch: Node, else_branch: Node):
+        self.condition = condition
+        self.then_branch = then_branch
+        self.else_branch = else_branch
+    
+    def evaluate(self, x: List[float]) -> float:
+        try:
+            cond_value = self.condition.evaluate(x)
+            if cond_value > 0:
+                return self.then_branch.evaluate(x)
+            else:
+                return self.else_branch.evaluate(x)
+        except (ValueError, ZeroDivisionError, OverflowError):
+            return 0.0
+    
+    def depth(self) -> int:
+        return 1 + max(
+            self.condition.depth(),
+            self.then_branch.depth(),
+            self.else_branch.depth()
+        )
+    
+    def copy(self) -> 'ConditionalNode':
+        return ConditionalNode(
+            self.condition.copy(),
+            self.then_branch.copy(),
+            self.else_branch.copy()
+        )
+    
+    def to_string(self) -> str:
+        return f"({self.condition.to_string()} > 0 ? {self.then_branch.to_string()} : {self.else_branch.to_string()})"
+
+
 # ==================== Генератор популяции ====================
 
 class ExpressionGenerator:
@@ -169,13 +211,30 @@ class ExpressionGenerator:
     def __init__(self, max_depth: int = 5, input_dim: int = 1):
         self.max_depth = max_depth
         self.input_dim = input_dim  # Размерность входного вектора
+        
+        # Бинарные операторы: (функция, символ)
         self.binary_ops = [
             (operator.add, "+"),
             (operator.sub, "-"),
             (operator.mul, "*"),
             (self.safe_div, "/"),
             (self.safe_pow, "^"),
+            # Новые бинарные операторы
+            (self.safe_min, "min"),
+            (self.safe_max, "max"),
+            (self.safe_mod, "mod"),
+            (self.safe_atan2, "atan2"),
+            (self.safe_hypot, "hypot"),
+            # Операторы сравнения (возвращают 1.0 или 0.0)
+            (self.safe_gt, ">"),
+            (self.safe_lt, "<"),
+            (self.safe_ge, ">="),
+            (self.safe_le, "<="),
+            (self.safe_eq, "=="),
+            (self.safe_ne, "!="),
         ]
+        
+        # Унарные операторы: (функция, символ)
         self.unary_ops = [
             (math.sin, "sin"),
             (math.cos, "cos"),
@@ -184,7 +243,26 @@ class ExpressionGenerator:
             (math.sqrt, "sqrt"),
             (math.log, "log"),
             (self.safe_neg, "neg"),
+            # Новые унарные функции
+            (abs, "abs"),
+            (math.floor, "floor"),
+            (math.ceil, "ceil"),
+            (math.sinh, "sinh"),
+            (math.cosh, "cosh"),
+            (math.tanh, "tanh"),
+            (self.safe_asin, "asin"),
+            (self.safe_acos, "acos"),
+            (math.atan, "atan"),
+            (self.safe_log2, "log2"),
+            (self.safe_log10, "log10"),
+            (self.safe_sign, "sign"),
+            (self.safe_sigmoid, "sigmoid"),
+            (self.safe_softplus, "softplus"),
+            # Защищённые версии
+            (self.safe_log_protected, "log_p"),
+            (self.safe_sqrt_protected, "sqrt_p"),
         ]
+        
         self._node_count = 0
         self._max_nodes = 100
     
@@ -215,6 +293,151 @@ class ExpressionGenerator:
     def safe_neg(a: float) -> float:
         return -a
     
+    # === Новые унарные функции ===
+    
+    @staticmethod
+    def safe_asin(a: float) -> float:
+        try:
+            if abs(a) > 1:
+                a = math.copysign(1, a)
+            return math.asin(a)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_acos(a: float) -> float:
+        try:
+            if abs(a) > 1:
+                a = math.copysign(1, a)
+            return math.acos(a)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_log2(a: float) -> float:
+        try:
+            if a <= 0:
+                return 0.0
+            return math.log2(a)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_log10(a: float) -> float:
+        try:
+            if a <= 0:
+                return 0.0
+            return math.log10(a)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_sign(a: float) -> float:
+        if a > 0:
+            return 1.0
+        elif a < 0:
+            return -1.0
+        return 0.0
+    
+    @staticmethod
+    def safe_sigmoid(a: float) -> float:
+        try:
+            if a > 500:
+                return 1.0
+            if a < -500:
+                return 0.0
+            return 1.0 / (1.0 + math.exp(-a))
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_softplus(a: float) -> float:
+        try:
+            if a > 500:
+                return a
+            if a < -500:
+                return 0.0
+            return math.log(1.0 + math.exp(-a)) if a < 0 else math.log(1.0 + math.exp(a))
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_log_protected(a: float) -> float:
+        """Защищённый логарифм: log(abs(x) + 1e-10)"""
+        try:
+            return math.log(abs(a) + 1e-10)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_sqrt_protected(a: float) -> float:
+        """Защищённый корень: sqrt(abs(x))"""
+        try:
+            return math.sqrt(abs(a))
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    # === Новые бинарные функции ===
+    
+    @staticmethod
+    def safe_min(a: float, b: float) -> float:
+        return min(a, b)
+    
+    @staticmethod
+    def safe_max(a: float, b: float) -> float:
+        return max(a, b)
+    
+    @staticmethod
+    def safe_mod(a: float, b: float) -> float:
+        try:
+            if abs(b) < 1e-10:
+                return 0.0
+            return a % b
+        except (ValueError, ZeroDivisionError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_atan2(y: float, x: float) -> float:
+        try:
+            return math.atan2(y, x)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    @staticmethod
+    def safe_hypot(a: float, b: float) -> float:
+        try:
+            return math.hypot(a, b)
+        except (ValueError, OverflowError):
+            return 0.0
+    
+    # === Операторы сравнения (возвращают 1.0 или 0.0) ===
+    
+    EPSILON = 1e-9
+    
+    @staticmethod
+    def safe_gt(a: float, b: float) -> float:
+        return 1.0 if a > b else 0.0
+    
+    @staticmethod
+    def safe_lt(a: float, b: float) -> float:
+        return 1.0 if a < b else 0.0
+    
+    @staticmethod
+    def safe_ge(a: float, b: float) -> float:
+        return 1.0 if a >= b else 0.0
+    
+    @staticmethod
+    def safe_le(a: float, b: float) -> float:
+        return 1.0 if a <= b else 0.0
+    
+    @staticmethod
+    def safe_eq(a: float, b: float) -> float:
+        return 1.0 if abs(a - b) < ExpressionGenerator.EPSILON else 0.0
+    
+    @staticmethod
+    def safe_ne(a: float, b: float) -> float:
+        return 1.0 if abs(a - b) >= ExpressionGenerator.EPSILON else 0.0
+    
     def _create_random_variable(self) -> Variable:
         """Создать случайную переменную из доступных индексов"""
         if self.input_dim <= 0:
@@ -242,12 +465,19 @@ class ExpressionGenerator:
         # Внутренний узел
         choice = random.random()
         
-        if choice < 0.7:  # Бинарный оператор
+        # Вероятность генерации условного узла ~12%
+        if choice < 0.12 and depth < self.max_depth - 1:
+            # Условный узел (If-Then-Else)
+            condition = self.generate_random(depth + 1)
+            then_branch = self.generate_random(depth + 1)
+            else_branch = self.generate_random(depth + 1)
+            return ConditionalNode(condition, then_branch, else_branch)
+        elif choice < 0.75:  # Бинарный оператор (~63%)
             op_func, op_symbol = random.choice(self.binary_ops)
             left = self.generate_random(depth + 1)
             right = self.generate_random(depth + 1)
             return BinaryOperator(left, right, op_func, op_symbol)
-        else:  # Унарный оператор
+        else:  # Унарный оператор (~25%)
             op_func, op_symbol = random.choice(self.unary_ops)
             operand = self.generate_random(depth + 1)
             return UnaryOperator(operand, op_func, op_symbol)
@@ -491,6 +721,14 @@ class GeneticAlgorithm:
                                 parent1_parent.right = node2_copy.copy()
                         elif isinstance(parent1_parent, UnaryOperator):
                             parent1_parent.operand = node2_copy.copy()
+                        elif isinstance(parent1_parent, ConditionalNode):
+                            # Для условного узла заменяем одну из ветвей
+                            if parent1_parent.condition is node1_copy:
+                                parent1_parent.condition = node2_copy.copy()
+                            elif parent1_parent.then_branch is node1_copy:
+                                parent1_parent.then_branch = node2_copy.copy()
+                            else:
+                                parent1_parent.else_branch = node2_copy.copy()
                     
                     if parent2_parent:
                         if isinstance(parent2_parent, BinaryOperator):
@@ -500,6 +738,14 @@ class GeneticAlgorithm:
                                 parent2_parent.right = node1_copy.copy()
                         elif isinstance(parent2_parent, UnaryOperator):
                             parent2_parent.operand = node1_copy.copy()
+                        elif isinstance(parent2_parent, ConditionalNode):
+                            # Для условного узла заменяем одну из ветвей
+                            if parent2_parent.condition is node2_copy:
+                                parent2_parent.condition = node1_copy.copy()
+                            elif parent2_parent.then_branch is node2_copy:
+                                parent2_parent.then_branch = node1_copy.copy()
+                            else:
+                                parent2_parent.else_branch = node1_copy.copy()
         
         # С вероятностью выполнить кроссовер между разными деревьями (между выходами)
         if self.output_dim > 1 and random.random() < 0.3:
@@ -527,6 +773,14 @@ class GeneticAlgorithm:
                                     parent1_parent.right = node2_copy.copy()
                             elif isinstance(parent1_parent, UnaryOperator):
                                 parent1_parent.operand = node2_copy.copy()
+                            elif isinstance(parent1_parent, ConditionalNode):
+                                # Для условного узла заменяем одну из ветвей
+                                if parent1_parent.condition is node1_copy:
+                                    parent1_parent.condition = node2_copy.copy()
+                                elif parent1_parent.then_branch is node1_copy:
+                                    parent1_parent.then_branch = node2_copy.copy()
+                                else:
+                                    parent1_parent.else_branch = node2_copy.copy()
                             
                             if isinstance(parent2_parent, BinaryOperator):
                                 if parent2_parent.left is node2_copy:
@@ -535,6 +789,14 @@ class GeneticAlgorithm:
                                     parent2_parent.right = node1_copy.copy()
                             elif isinstance(parent2_parent, UnaryOperator):
                                 parent2_parent.operand = node1_copy.copy()
+                            elif isinstance(parent2_parent, ConditionalNode):
+                                # Для условного узла заменяем одну из ветвей
+                                if parent2_parent.condition is node2_copy:
+                                    parent2_parent.condition = node1_copy.copy()
+                                elif parent2_parent.then_branch is node2_copy:
+                                    parent2_parent.then_branch = node1_copy.copy()
+                                else:
+                                    parent2_parent.else_branch = node1_copy.copy()
         
         return Individual(child1_trees if self.output_dim > 1 else child1_trees[0]), \
                Individual(child2_trees if self.output_dim > 1 else child2_trees[0])
@@ -564,6 +826,10 @@ class GeneticAlgorithm:
             nodes.extend(self.collect_all_nodes(root.right))
         elif isinstance(root, UnaryOperator):
             nodes.extend(self.collect_all_nodes(root.operand))
+        elif isinstance(root, ConditionalNode):
+            nodes.extend(self.collect_all_nodes(root.condition))
+            nodes.extend(self.collect_all_nodes(root.then_branch))
+            nodes.extend(self.collect_all_nodes(root.else_branch))
         
         return nodes
     
@@ -618,6 +884,15 @@ class GeneticAlgorithm:
                                 parent.right = self.generator.generate_random()
                         elif isinstance(parent, UnaryOperator):
                             parent.operand = self.generator.generate_random()
+                        elif isinstance(parent, ConditionalNode):
+                            # Для условного узла заменяем одну из ветвей
+                            branch_choice = random.random()
+                            if branch_choice < 0.33 and parent.condition is node_to_replace:
+                                parent.condition = self.generator.generate_random()
+                            elif branch_choice < 0.66 and parent.then_branch is node_to_replace:
+                                parent.then_branch = self.generator.generate_random()
+                            else:
+                                parent.else_branch = self.generator.generate_random()
             
             elif mutation_type == 'change_constant':
                 # Изменить случайную константу (тонкая настройка)
@@ -644,6 +919,14 @@ class GeneticAlgorithm:
                                 parent.right = new_unary
                         elif isinstance(parent, UnaryOperator):
                             parent.operand = new_unary
+                        elif isinstance(parent, ConditionalNode):
+                            # Для условного узла заменяем одну из ветвей
+                            if parent.condition is node:
+                                parent.condition = new_unary
+                            elif parent.then_branch is node:
+                                parent.then_branch = new_unary
+                            else:
+                                parent.else_branch = new_unary
                     else:
                         new_trees[tree_idx] = new_unary
             
@@ -665,6 +948,14 @@ class GeneticAlgorithm:
                                     parent.right = replacement
                             elif isinstance(parent, UnaryOperator):
                                 parent.operand = replacement
+                            elif isinstance(parent, ConditionalNode):
+                                # Для условного узла упрощаем одну из ветвей
+                                if parent.condition is node_to_simplify:
+                                    parent.condition = replacement
+                                elif parent.then_branch is node_to_simplify:
+                                    parent.then_branch = replacement
+                                else:
+                                    parent.else_branch = replacement
         
         # Проверка на слишком большое выражение
         for tree in new_trees:
@@ -691,6 +982,25 @@ class GeneticAlgorithm:
             if root.operand is target:
                 return root
             return self.find_parent(root.operand, target)
+        
+        elif isinstance(root, ConditionalNode):
+            # Для условного узла проверяем все три ветви
+            if root.condition is target:
+                return root
+            cond_parent = self.find_parent(root.condition, target)
+            if cond_parent:
+                return cond_parent
+            
+            if root.then_branch is target:
+                return root
+            then_parent = self.find_parent(root.then_branch, target)
+            if then_parent:
+                return then_parent
+            
+            if root.else_branch is target:
+                return root
+            else_parent = self.find_parent(root.else_branch, target)
+            return else_parent
         
         return None
     
