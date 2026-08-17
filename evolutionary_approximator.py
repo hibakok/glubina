@@ -595,6 +595,17 @@ class ApproximatorTester:
             "Сложная": lambda x: math.sin(x) * math.cos(x) + 0.1 * x ** 3,
         }
         
+        # Словесные описания и формулы встроенных функций
+        self.function_descriptions = {
+            "Линейная": "f(x) = 2x + 3",
+            "Квадратичная": "f(x) = x²",
+            "Синус": "f(x) = sin(x)",
+            "Косинус": "f(x) = cos(x)",
+            "Экспонента": "f(x) = e^(x/5)",
+            "Комбинированная": "f(x) = sin(x) + 0.5x²",
+            "Сложная": "f(x) = sin(x)·cos(x) + 0.1x³",
+        }
+        
         self.test_ranges = {
             "default": [i * 0.1 for i in range(-30, 31)],
             "wide": [i * 0.2 for i in range(-50, 51)],
@@ -950,16 +961,28 @@ class EvolutionaryApproximatorApp:
     def select_builtin_function(self) -> Optional[Tuple[str, Callable[[float], float]]]:
         """Предложить пользователю выбрать встроенную функцию"""
         print("\nДоступные встроенные функции:")
-        print("-" * 40)
+        print("-" * 50)
         
         func_list = list(self.tester.test_functions.items())
-        for i, (name, _) in enumerate(func_list, 1):
-            print(f"  {i}. {name}")
-        print("-" * 40)
+        desc_list = list(self.tester.function_descriptions.items())
+        
+        for i, ((name, _), (_, formula)) in enumerate(zip(func_list, desc_list), 1):
+            print(f"  {i}. {name}: {formula}")
+        
+        print("-" * 50)
+        print("  0. Вернуться в главное меню")
+        print("-" * 50)
         
         try:
-            choice = input(f"Выберите функцию (1-{len(func_list)}): ").strip()
-            choice_idx = int(choice) - 1
+            choice = input(f"Выберите функцию (0-{len(func_list)}): ").strip()
+            choice_idx = int(choice)
+            
+            # Пункт "Вернуться в главное меню"
+            if choice_idx == 0:
+                return None
+            
+            # Корректировка индекса (пользователь видит 1-based, но у нас есть пункт 0)
+            choice_idx -= 1
             
             if 0 <= choice_idx < len(func_list):
                 return func_list[choice_idx]
@@ -974,7 +997,9 @@ class EvolutionaryApproximatorApp:
         """Запустить эволюцию на встроенной функции"""
         func_result = self.select_builtin_function()
         
+        # Если пользователь выбрал "Вернуться в главное меню" или произошла ошибка
         if func_result is None:
+            print("\nВозврат в главное меню...")
             return
         
         func_name, target_func = func_result
