@@ -749,7 +749,10 @@ class EvolutionaryApproximatorApp:
     def load_data_from_file(self) -> Tuple[Optional[List[float]], Optional[List[float]]]:
         """Загрузить данные из файла
         
-        Формат файла: каждая строка содержит "x y" через пробел
+        Поддерживаемые форматы:
+        - CSV: числа через запятую или точку с запятой (например, 1.5, 3.2)
+        - Текстовый: числа через пробел или табуляцию
+        
         Возвращает кортеж (x_values, y_values) или (None, None) при ошибке
         """
         filename = input("Введите имя файла с данными: ").strip()
@@ -760,39 +763,95 @@ class EvolutionaryApproximatorApp:
         
         x_values = []
         y_values = []
+        skipped_lines = 0
         
         try:
-            with open(filename, 'r') as f:
+            with open(filename, 'r', encoding='utf-8') as f:
                 for line_num, line in enumerate(f, 1):
                     line = line.strip()
+                    
+                    # Пропустить пустые строки и комментарии
                     if not line or line.startswith('#'):
                         continue
                     
-                    parts = line.split()
-                    if len(parts) < 2:
-                        print(f"Предупреждение: строка {line_num} пропущена (недостаточно данных)")
-                        continue
+                    # Попытаться распарсить строку разными способами
+                    parsed = False
                     
-                    try:
-                        x = float(parts[0])
-                        y = float(parts[1])
-                        x_values.append(x)
-                        y_values.append(y)
-                    except ValueError:
-                        print(f"Предупреждение: строка {line_num} пропущена (некорректные числа)")
+                    # Способ 1: CSV с запятой
+                    if ',' in line and ';' not in line:
+                        parts = line.split(',')
+                        if len(parts) >= 2:
+                            try:
+                                x = float(parts[0].strip())
+                                y = float(parts[1].strip())
+                                x_values.append(x)
+                                y_values.append(y)
+                                parsed = True
+                            except ValueError:
+                                pass
+                    
+                    # Способ 2: CSV с точкой с запятой
+                    if not parsed and ';' in line:
+                        parts = line.split(';')
+                        if len(parts) >= 2:
+                            try:
+                                x = float(parts[0].strip())
+                                y = float(parts[1].strip())
+                                x_values.append(x)
+                                y_values.append(y)
+                                parsed = True
+                            except ValueError:
+                                pass
+                    
+                    # Способ 3: Пробел или табуляция
+                    if not parsed:
+                        parts = line.replace('\t', ' ').split()
+                        if len(parts) >= 2:
+                            try:
+                                x = float(parts[0])
+                                y = float(parts[1])
+                                x_values.append(x)
+                                y_values.append(y)
+                                parsed = True
+                            except ValueError:
+                                pass
+                    
+                    # Если ни один способ не сработал — пропустить строку
+                    if not parsed:
+                        skipped_lines += 1
                 
-                if len(x_values) < 3:
-                    print("Ошибка: недостаточно точек данных (минимум 3).")
+                # Проверка результата
+                if len(x_values) < 2:
+                    print(f"Ошибка: файл не содержит валидных данных (найдено только {len(x_values)} пар).")
+                    if skipped_lines > 0:
+                        print(f"Пропущено строк: {skipped_lines} (возможно, это заголовки или неверный формат)")
                     return None, None
                 
-                print(f"Успешно загружено {len(x_values)} точек данных.")
+                # Показать сводку
+                x_min, x_max = min(x_values), max(x_values)
+                y_min, y_max = min(y_values), max(y_values)
+                
+                print(f"\n{'=' * 50}")
+                print("СВОДКА ПО ЗАГРУЖЕННЫМ ДАННЫМ")
+                print('=' * 50)
+                print(f"Загружено пар данных: {len(x_values)}")
+                print(f"Диапазон X: [{x_min:.6f}, {x_max:.6f}]")
+                print(f"Диапазон Y: [{y_min:.6f}, {y_max:.6f}]")
+                if skipped_lines > 0:
+                    print(f"Пропущено строк: {skipped_lines}")
+                print('=' * 50)
+                
                 return x_values, y_values
                 
         except FileNotFoundError:
             print(f"Ошибка: файл '{filename}' не найден.")
+            print("Убедитесь, что файл существует и лежит в той же директории, что и скрипт.")
             return None, None
         except PermissionError:
             print(f"Ошибка: нет доступа к файлу '{filename}'.")
+            return None, None
+        except UnicodeDecodeError:
+            print(f"Ошибка: файл '{filename}' имеет неверную кодировку (ожидалась UTF-8).")
             return None, None
         except Exception as e:
             print(f"Ошибка при чтении файла: {e}")
