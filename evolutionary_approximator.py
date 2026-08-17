@@ -489,6 +489,7 @@ class GeneticAlgorithm:
         if verbose:
             print(f"Начальная лучшая приспособленность: {best_ever.fitness:.6f}")
         
+        start_time = time.time()
         generation = 0
         no_improvement_count = 0
         max_no_improvement = 150  # Максимальное количество поколений без улучшения
@@ -509,19 +510,31 @@ class GeneticAlgorithm:
             else:
                 no_improvement_count += 1
             
-            if verbose and generation % 100 == 0:
-                print(f"Поколение {generation}: лучшая = {best_current.fitness:.6f}, средняя = {avg_fitness:.6f}")
-            
             # Проверка критерия остановки - целевая приспособленность
             if best_current.fitness < self.target_fitness:
+                elapsed = time.time() - start_time
                 if verbose:
-                    print(f"Достигнута целевая приспособленность на поколении {generation}")
+                    # Очистить строку прогресса и вывести финальное сообщение
+                    print("\r" + " " * 100 + "\r", end="")
+                    print(f"\n🎯 ДОСТИГНУТА ЦЕЛЕВАЯ ПРИСПОСОБЛЕННОСТЬ на поколении {generation}!")
+                    print(f"   Лучшая ошибка: {best_current.fitness:.6f}")
+                    print(f"   Время: {elapsed:.1f}с")
                 break
+            
+            # Обновление прогресса в реальном времени (каждое поколение)
+            if verbose:
+                elapsed = time.time() - start_time
+                progress_line = f"\rПоколение {generation}/{self.max_generations} | Лучшая ошибка: {best_current.fitness:.6f} | Средняя: {avg_fitness:.6f} | Время: {elapsed:.1f}с"
+                print(progress_line, end="", flush=True)
+                
+                # Раз в 50 поколений выводить сводку новой строкой
+                if generation > 0 and generation % 50 == 0:
+                    print(f"\n📊 Сводка на поколении {generation}: лучшая={best_current.fitness:.6f}, средняя={avg_fitness:.6f}, время={elapsed:.1f}с")
             
             # Проверка на застой
             if no_improvement_count >= max_no_improvement:
                 if verbose:
-                    print(f"Застой обнаружен на поколении {generation}, перезапуск...")
+                    print(f"\n⚠️ Застой обнаружен на поколении {generation}, перезапуск...")
                 # Частичный перезапуск популяции
                 self._partial_restart()
                 no_improvement_count = 0
@@ -554,9 +567,13 @@ class GeneticAlgorithm:
             self.population = new_population
             generation += 1
         
-        if verbose:
-            print(f"\nЭволюция завершена после {generation} поколений")
-            print(f"Лучшая приспособленность: {best_ever.fitness:.6f}")
+        # Если цикл завершился без достижения целевой приспособленности
+        if best_ever.fitness >= self.target_fitness and verbose:
+            elapsed = time.time() - start_time
+            print("\r" + " " * 100 + "\r", end="")
+            print(f"\n🏁 Эволюция завершена после {generation} поколений")
+            print(f"   Лучшая ошибка: {best_ever.fitness:.6f}")
+            print(f"   Время: {elapsed:.1f}с")
         
         return best_ever
     
