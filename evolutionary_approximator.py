@@ -8,10 +8,34 @@
 import random
 import math
 import operator
-from typing import List, Callable, Tuple, Optional
+from typing import List, Callable, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import time
+
+
+# ==================== Структуры данных для многомерных случаев ====================
+
+@dataclass
+class DataPair:
+    """Пара вход-выход для многомерных данных"""
+    inputs: List[float]  # Входной вектор размерности N
+    outputs: List[float]  # Выходной вектор размерности M
+
+
+@dataclass
+class ParsedData:
+    """Результат парсинга файла с данными"""
+    pairs: List[DataPair]  # Список пар вход-выход
+    input_dim: int  # Размерность входа (N)
+    output_dim: int  # Размерность выхода (M)
+    total_lines: int  # Всего строк в файле
+    parsed_lines: int  # Успешно распаршено
+    skipped_lines: int  # Пропущено строк
+    skip_reasons: Dict[str, int]  # Причины пропуска строк
+    input_ranges: List[Tuple[float, float]]  # Диапазоны по каждому измерению входа
+    output_ranges: List[Tuple[float, float]]  # Диапазоны по каждому измерению выхода
+    error_message: Optional[str]  # Сообщение об ошибке, если есть
 
 
 # ==================== Базовые компоненты ====================
@@ -798,6 +822,291 @@ class ApproximatorTester:
         return all_results
 
 
+# ==================== Парсер данных ====================
+
+class DataParser:
+    """Парсер файлов с данными в формате: вход1 вход2 ... | выход1 выход2 ..."""
+    
+    @staticmethod
+    def parse_file(filename: str) -> ParsedData:
+        """
+        Загрузить данные из файла.
+        
+        Формат файла:
+        - Каждая строка: входное_число_1 ... входное_число_N | выходное_число_1 ... выходное_число_M
+        - Комментарии начинаются с #
+        - Пустые строки пропускаются
+        - Разделитель | обязателен
+        
+        Возвращает ParsedData с результатами парсинга или ошибкой.
+        """
+        pairs: List[DataPair] = []
+        input_dim: int = -1
+        output_dim: int = -1
+        total_lines: int = 0
+        parsed_lines: int = 0
+        skipped_lines: int = 0
+        skip_reasons: Dict[str, int] = {}
+        
+        # Для вычисления диапазонов
+        input_mins: List[float] = []
+        input_maxs: List[float] = []
+        output_mins: List[float] = []
+        output_maxs: List[float] = []
+        
+        error_message: Optional[str] = None
+        
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    total_lines += 1
+                    line = line.strip()
+                    
+                    # Пропустить пустые строки
+                    if not line:
+                        skipped_lines += 1
+                        skip_reasons['empty'] = skip_reasons.get('empty', 0) + 1
+                        continue
+                    
+                    # Пропустить комментарии
+                    if line.startswith('#'):
+                        skipped_lines += 1
+                        skip_reasons['comment'] = skip_reasons.get('comment', 0) + 1
+                        continue
+                    
+                    # Проверить наличие разделителя |
+                    if '|' not in line:
+                        skipped_lines += 1
+                        skip_reasons['no_separator'] = skip_reasons.get('no_separator', 0) + 1
+                        continue
+                    
+                    # Разделить по |
+                    parts = line.split('|')
+                    
+                    # Должно быть ровно две части (вход и выход)
+                    if len(parts) != 2:
+                        skipped_lines += 1
+                        skip_reasons['multiple_separators'] = skip_reasons.get('multiple_separators', 0) + 1
+                        continue
+                    
+                    input_part, output_part = parts
+                    
+                    # Распарсить входные значения
+                    try:
+                        inputs = [float(x.strip()) for x in input_part.split()]
+                    except ValueError:
+                        skipped_lines += 1
+                        skip_reasons['invalid_input'] = skip_reasons.get('invalid_input', 0) + 1
+                        continue
+                    
+                    # Распарсить выходные значения
+                    try:
+                        outputs = [float(y.strip()) for y in output_part.split()]
+                    except ValueError:
+                        skipped_lines += 1
+                        skip_reasons['invalid_output'] = skip_reasons.get('invalid_output', 0) + 1
+                        continue
+                    
+                    # Проверка: должны быть хотя бы одно входное и одно выходное значение
+                    if len(inputs) == 0 or len(outputs) == 0:
+                        skipped_lines += 1
+                        skip_reasons['empty_vector'] = skip_reasons.get('empty_vector', 0) + 1
+                        continue
+                    
+                    # Определить размерность по первой корректной строке
+                    if input_dim == -1:
+                        input_dim = len(inputs)
+                        output_dim = len(outputs)
+                        # Инициализировать диапазоны
+                        input_mins = list(inputs)
+                        input_maxs = list(inputs)
+                        output_mins = list(outputs)
+                        output_maxs = list(outputs)
+                    else:
+                        # Проверить соответствие размерности
+                        if len(inputs) != input_dim:
+                            skipped_lines += 1
+                            skip_reasons['input_dim_mismatch'] = skip_reasons.get('input_dim_mismatch', 0) + 1
+                            continue
+                        
+                        if len(outputs) != output_dim:
+                            skipped_lines += 1
+                            skip_reasons['output_dim_mismatch'] = skip_reasons.get('output_dim_mismatch', 0) + 1
+                            continue
+                        
+                        # Обновить диапазоны
+                        for i, val in enumerate(inputs):
+                            input_mins[i] = min(input_mins[i], val)
+                            input_maxs[i] = max(input_maxs[i], val)
+                        
+                        for i, val in enumerate(outputs):
+                            output_mins[i] = min(output_mins[i], val)
+                            output_maxs[i] = max(output_maxs[i], val)
+                    
+                    # Добавить пару
+                    pairs.append(DataPair(inputs=inputs, outputs=outputs))
+                    parsed_lines += 1
+            
+            # Проверка: файл пустой или недостаточно данных
+            if parsed_lines == 0:
+                if total_lines == 0:
+                    error_message = "Файл пустой"
+                elif total_lines == skipped_lines:
+                    reasons_str = ', '.join([f"{k}: {v}" for k, v in skip_reasons.items()])
+                    error_message = f"Все строки пропущены ({reasons_str})"
+                else:
+                    error_message = "Нет корректных строк с данными"
+                
+                return ParsedData(
+                    pairs=pairs,
+                    input_dim=input_dim if input_dim >= 0 else 0,
+                    output_dim=output_dim if output_dim >= 0 else 0,
+                    total_lines=total_lines,
+                    parsed_lines=parsed_lines,
+                    skipped_lines=skipped_lines,
+                    skip_reasons=skip_reasons,
+                    input_ranges=[],
+                    output_ranges=[],
+                    error_message=error_message
+                )
+            
+            # Проверка: минимум 3 пары
+            if parsed_lines < 3:
+                error_message = f"Недостаточно данных: найдено только {parsed_lines} пар (требуется минимум 3)"
+                return ParsedData(
+                    pairs=pairs,
+                    input_dim=input_dim,
+                    output_dim=output_dim,
+                    total_lines=total_lines,
+                    parsed_lines=parsed_lines,
+                    skipped_lines=skipped_lines,
+                    skip_reasons=skip_reasons,
+                    input_ranges=list(zip(input_mins, input_maxs)),
+                    output_ranges=list(zip(output_mins, output_maxs)),
+                    error_message=error_message
+                )
+            
+            # Сформировать диапазоны
+            input_ranges = list(zip(input_mins, input_maxs))
+            output_ranges = list(zip(output_mins, output_maxs))
+            
+            return ParsedData(
+                pairs=pairs,
+                input_dim=input_dim,
+                output_dim=output_dim,
+                total_lines=total_lines,
+                parsed_lines=parsed_lines,
+                skipped_lines=skipped_lines,
+                skip_reasons=skip_reasons,
+                input_ranges=input_ranges,
+                output_ranges=output_ranges,
+                error_message=None
+            )
+            
+        except FileNotFoundError:
+            return ParsedData(
+                pairs=[],
+                input_dim=0,
+                output_dim=0,
+                total_lines=0,
+                parsed_lines=0,
+                skipped_lines=0,
+                skip_reasons={},
+                input_ranges=[],
+                output_ranges=[],
+                error_message=f"Файл '{filename}' не найден"
+            )
+        except PermissionError:
+            return ParsedData(
+                pairs=[],
+                input_dim=0,
+                output_dim=0,
+                total_lines=0,
+                parsed_lines=0,
+                skipped_lines=0,
+                skip_reasons={},
+                input_ranges=[],
+                output_ranges=[],
+                error_message=f"Нет доступа к файлу '{filename}'"
+            )
+        except UnicodeDecodeError:
+            return ParsedData(
+                pairs=[],
+                input_dim=0,
+                output_dim=0,
+                total_lines=0,
+                parsed_lines=0,
+                skipped_lines=0,
+                skip_reasons={},
+                input_ranges=[],
+                output_ranges=[],
+                error_message=f"Неверная кодировка файла '{filename}' (ожидалась UTF-8)"
+            )
+        except Exception as e:
+            return ParsedData(
+                pairs=[],
+                input_dim=0,
+                output_dim=0,
+                total_lines=0,
+                parsed_lines=0,
+                skipped_lines=0,
+                skip_reasons={},
+                input_ranges=[],
+                output_ranges=[],
+                error_message=f"Ошибка при чтении файла: {e}"
+            )
+    
+    @staticmethod
+    def print_summary(data: ParsedData) -> None:
+        """Вывести сводку по загруженным данным"""
+        print("\n" + "=" * 60)
+        print("СВОДКА ПО ЗАГРУЖЕННЫМ ДАННЫМ")
+        print("=" * 60)
+        
+        if data.error_message:
+            print(f"❌ ОШИБКА: {data.error_message}")
+            print("=" * 60)
+            return
+        
+        print(f"✅ Успешно загружено пар: {data.parsed_lines}")
+        print(f"Размерность входа (N): {data.input_dim}")
+        print(f"Размерность выхода (M): {data.output_dim}")
+        
+        # Диапазоны входов
+        if data.input_ranges:
+            print("\nДиапазоны входных переменных:")
+            for i, (min_val, max_val) in enumerate(data.input_ranges):
+                print(f"  X[{i}]: [{min_val:.6f}, {max_val:.6f}]")
+        
+        # Диапазоны выходов
+        if data.output_ranges:
+            print("\nДиапазоны выходных переменных:")
+            for i, (min_val, max_val) in enumerate(data.output_ranges):
+                print(f"  Y[{i}]: [{min_val:.6f}, {max_val:.6f}]")
+        
+        # Пропущенные строки
+        if data.skipped_lines > 0:
+            print(f"\n⚠️  Пропущено строк: {data.skipped_lines}")
+            if data.skip_reasons:
+                print("Причины пропуска:")
+                reason_map = {
+                    'empty': 'пустые строки',
+                    'comment': 'комментарии (#)',
+                    'no_separator': 'отсутствует разделитель |',
+                    'multiple_separators': 'несколько разделителей |',
+                    'invalid_input': 'некорректные входные значения',
+                    'invalid_output': 'некорректные выходные значения',
+                    'empty_vector': 'пустой вектор входа или выхода',
+                    'input_dim_mismatch': 'несоответствие размерности входа',
+                    'output_dim_mismatch': 'несоответствие размерности выхода'
+                }
+                for reason, count in data.skip_reasons.items():
+                    reason_text = reason_map.get(reason, reason)
+                    print(f"  - {reason_text}: {count}")
+        
+        print("=" * 60)
+
+
 # ==================== Основная программа ====================
 
 class EvolutionaryApproximatorApp:
@@ -917,13 +1226,12 @@ class EvolutionaryApproximatorApp:
             return None
     
     def load_data_from_file(self) -> Tuple[Optional[List[float]], Optional[List[float]]]:
-        """Загрузить данные из файла
+        """Загрузить данные из файла с использованием нового парсера.
         
-        Поддерживаемые форматы:
-        - CSV: числа через запятую или точку с запятой (например, 1.5, 3.2)
-        - Текстовый: числа через пробел или табуляцию
+        Новый формат: вход1 вход2 ... | выход1 выход2 ...
         
-        Возвращает кортеж (x_values, y_values) или (None, None) при ошибке
+        Возвращает кортеж (x_values, y_values) или (None, None) при ошибке.
+        Для многомерных случаев возвращает только первые измерения.
         """
         filename = input("Введите имя файла с данными: ").strip()
         
@@ -931,115 +1239,22 @@ class EvolutionaryApproximatorApp:
             print("Ошибка: имя файла не может быть пустым.")
             return None, None
         
-        x_values = []
-        y_values = []
-        skipped_lines = 0
-        invalid_line_examples = []
+        # Использовать новый парсер
+        parsed_data = DataParser.parse_file(filename)
         
-        try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                for line_num, line in enumerate(f, 1):
-                    line = line.strip()
-                    
-                    # Пропустить пустые строки и комментарии
-                    if not line or line.startswith('#'):
-                        continue
-                    
-                    # Попытаться распарсить строку разными способами
-                    parsed = False
-                    
-                    # Способ 1: CSV с запятой
-                    if ',' in line and ';' not in line:
-                        parts = line.split(',')
-                        if len(parts) >= 2:
-                            try:
-                                x = float(parts[0].strip())
-                                y = float(parts[1].strip())
-                                x_values.append(x)
-                                y_values.append(y)
-                                parsed = True
-                            except ValueError:
-                                pass
-                    
-                    # Способ 2: CSV с точкой с запятой
-                    if not parsed and ';' in line:
-                        parts = line.split(';')
-                        if len(parts) >= 2:
-                            try:
-                                x = float(parts[0].strip())
-                                y = float(parts[1].strip())
-                                x_values.append(x)
-                                y_values.append(y)
-                                parsed = True
-                            except ValueError:
-                                pass
-                    
-                    # Способ 3: Пробел или табуляция
-                    if not parsed:
-                        parts = line.replace('\t', ' ').split()
-                        if len(parts) >= 2:
-                            try:
-                                x = float(parts[0])
-                                y = float(parts[1])
-                                x_values.append(x)
-                                y_values.append(y)
-                                parsed = True
-                            except ValueError:
-                                pass
-                    
-                    # Если ни один способ не сработал — пропустить строку
-                    if not parsed:
-                        skipped_lines += 1
-                        if len(invalid_line_examples) < 3:
-                            invalid_line_examples.append((line_num, line[:50]))
-                
-                # Проверка результата
-                if len(x_values) < 3:
-                    print(f"Ошибка: данных недостаточно для аппроксимации (найдено только {len(x_values)} пар).")
-                    print("Требуется минимум 3 пары чисел для построения аппроксимации.")
-                    if skipped_lines > 0:
-                        print(f"Пропущено строк: {skipped_lines}")
-                        if invalid_line_examples:
-                            print("Примеры проблемных строк:")
-                            for ln, example in invalid_line_examples:
-                                print(f"  Строка {ln}: '{example}...'")
-                    return None, None
-                
-                # Показать сводку
-                x_min, x_max = min(x_values), max(x_values)
-                y_min, y_max = min(y_values), max(y_values)
-                
-                print(f"\n{'=' * 50}")
-                print("СВОДКА ПО ЗАГРУЖЕННЫМ ДАННЫМ")
-                print('=' * 50)
-                print(f"Загружено пар данных: {len(x_values)}")
-                print(f"Диапазон X: [{x_min:.6f}, {x_max:.6f}]")
-                print(f"Диапазон Y: [{y_min:.6f}, {y_max:.6f}]")
-                if skipped_lines > 0:
-                    print(f"⚠️  Пропущено строк: {skipped_lines} (содержат мусор, буквы вместо чисел или неверный формат)")
-                    if invalid_line_examples:
-                        print("Примеры проблемных строк:")
-                        for ln, example in invalid_line_examples:
-                            print(f"  Строка {ln}: '{example}...'")
-                print('=' * 50)
-                
-                return x_values, y_values
-                
-        except FileNotFoundError:
-            print(f"Ошибка: файл '{filename}' не найден.")
-            print("Убедитесь, что файл существует и лежит в той же директории, что и скрипт.")
+        # Вывести сводку
+        DataParser.print_summary(parsed_data)
+        
+        # Проверить на ошибки
+        if parsed_data.error_message:
             return None, None
-        except PermissionError:
-            print(f"Ошибка: нет доступа к файлу '{filename}'.")
-            return None, None
-        except UnicodeDecodeError:
-            print(f"Ошибка: файл '{filename}' имеет неверную кодировку (ожидалась UTF-8).")
-            return None, None
-        except Exception as e:
-            print(f"Ошибка при чтении файла: {e}")
-            return None, None
-            print(f"Ошибка при чтении файла: {e}")
-            return None, None
+        
+        # Для обратной совместимости вернуть только первые измерения
+        # (старый код ожидает одномерные x и y)
+        x_values = [pair.inputs[0] for pair in parsed_data.pairs]
+        y_values = [pair.outputs[0] for pair in parsed_data.pairs]
+        
+        return x_values, y_values
     
     def create_target_function_from_data(self, x_values: List[float], y_values: List[float]) -> Callable[[float], float]:
         """Создать целевую функцию из данных для аппроксимации"""
