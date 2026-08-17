@@ -706,54 +706,401 @@ class ApproximatorTester:
 
 # ==================== Основная программа ====================
 
+class EvolutionaryApproximatorApp:
+    """Основное приложение с интерактивным меню"""
+    
+    def __init__(self):
+        self.ga: Optional[GeneticAlgorithm] = None
+        self.best_individual: Optional[Individual] = None
+        self.last_results: Optional[dict] = None
+        self.tester = ApproximatorTester()
+        
+        # Параметры генетического алгоритма по умолчанию
+        self.default_ga_params = {
+            'population_size': 150,
+            'mutation_rate': 0.4,
+            'crossover_rate': 0.8,
+            'elitism_count': 10,
+            'max_generations': 600,
+            'target_fitness': 0.05,
+            'max_depth': 8
+        }
+    
+    def display_menu(self) -> None:
+        """Отобразить главное меню"""
+        print("\n" + "=" * 50)
+        print("       ЭВОЛЮЦИОНИРУЮЩИЙ АППРОКСИМАТОР")
+        print("=" * 50)
+        print("1. Загрузить данные из файла и запустить эволюцию")
+        print("2. Запустить эволюцию на встроенной функции")
+        print("3. Посмотреть результаты последнего запуска")
+        print("4. Сохранить найденное выражение в файл")
+        print("5. Выход")
+        print("=" * 50)
+    
+    def get_user_choice(self) -> Optional[int]:
+        """Получить выбор пользователя"""
+        try:
+            choice = input("\nВыберите пункт меню (1-5): ").strip()
+            return int(choice)
+        except ValueError:
+            return None
+    
+    def load_data_from_file(self) -> Tuple[Optional[List[float]], Optional[List[float]]]:
+        """Загрузить данные из файла
+        
+        Формат файла: каждая строка содержит "x y" через пробел
+        Возвращает кортеж (x_values, y_values) или (None, None) при ошибке
+        """
+        filename = input("Введите имя файла с данными: ").strip()
+        
+        if not filename:
+            print("Ошибка: имя файла не может быть пустым.")
+            return None, None
+        
+        x_values = []
+        y_values = []
+        
+        try:
+            with open(filename, 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    parts = line.split()
+                    if len(parts) < 2:
+                        print(f"Предупреждение: строка {line_num} пропущена (недостаточно данных)")
+                        continue
+                    
+                    try:
+                        x = float(parts[0])
+                        y = float(parts[1])
+                        x_values.append(x)
+                        y_values.append(y)
+                    except ValueError:
+                        print(f"Предупреждение: строка {line_num} пропущена (некорректные числа)")
+                
+                if len(x_values) < 3:
+                    print("Ошибка: недостаточно точек данных (минимум 3).")
+                    return None, None
+                
+                print(f"Успешно загружено {len(x_values)} точек данных.")
+                return x_values, y_values
+                
+        except FileNotFoundError:
+            print(f"Ошибка: файл '{filename}' не найден.")
+            return None, None
+        except PermissionError:
+            print(f"Ошибка: нет доступа к файлу '{filename}'.")
+            return None, None
+        except Exception as e:
+            print(f"Ошибка при чтении файла: {e}")
+            return None, None
+    
+    def create_target_function_from_data(self, x_values: List[float], y_values: List[float]) -> Callable[[float], float]:
+        """Создать целевую функцию из данных для аппроксимации"""
+        # Используем интерполяцию для создания функции
+        def target_func(x: float) -> float:
+            # Найти ближайшую точку
+            min_dist = float('inf')
+            closest_y = y_values[0] if y_values else 0.0
+            
+            for xv, yv in zip(x_values, y_values):
+                dist = abs(x - xv)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_y = yv
+            
+            # Простая линейная интерполяция между двумя ближайшими точками
+            if len(x_values) >= 2:
+                sorted_points = sorted(zip(x_values, y_values), key=lambda p: p[0])
+                
+                # Найти соседние точки
+                for i in range(len(sorted_points) - 1):
+                    x1, y1 = sorted_points[i]
+                    x2, y2 = sorted_points[i + 1]
+                    
+                    if x1 <= x <= x2:
+                        # Линейная интерполяция
+                        if abs(x2 - x1) > 1e-10:
+                            t = (x - x1) / (x2 - x1)
+                            return y1 + t * (y2 - y1)
+                
+                # Если x вне диапазона, использовать ближайшую границу
+                if x < sorted_points[0][0]:
+                    return sorted_points[0][1]
+                else:
+                    return sorted_points[-1][1]
+            
+            return closest_y
+        
+        return target_func
+    
+    def run_evolution_on_data(self, x_values: List[float], y_values: List[float]) -> None:
+        """Запустить эволюцию на загруженных данных"""
+        print("\n" + "=" * 50)
+        print("ЗАПУСК ЭВОЛЮЦИИ НА ЗАГРУЖЕННЫХ ДАННЫХ")
+        print("=" * 50)
+        
+        # Создать целевую функцию из данных
+        target_func = self.create_target_function_from_data(x_values, y_values)
+        
+        # Использовать x_values как тестовые точки
+        test_points = x_values
+        
+        # Инициализировать ГА
+        self.ga = GeneticAlgorithm(**self.default_ga_params)
+        
+        print(f"\nПараметры эволюции:")
+        print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+        print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+        print(f"  Точек данных: {len(test_points)}")
+        print()
+        
+        # Запустить эволюцию
+        self.best_individual = self.ga.evolve(target_func, test_points, verbose=True)
+        
+        # Сохранить результаты
+        if self.best_individual:
+            self.last_results = {
+                'type': 'data',
+                'expression': self.best_individual.expression.to_string(),
+                'fitness': self.best_individual.fitness,
+                'data_points': len(x_values),
+                'generations': len(self.ga.best_fitness_history) if self.ga else 0
+            }
+            
+            print("\n" + "-" * 50)
+            print("РЕЗУЛЬТАТ:")
+            print(f"  Выражение: {self.last_results['expression']}")
+            print(f"  Ошибка (MSE): {self.last_results['fitness']:.6f}")
+            print(f"  Поколений: {self.last_results['generations']}")
+            
+            # Примеры предсказаний на данных
+            print("\nПримеры предсказаний на данных:")
+            sample_indices = [0, len(x_values)//2, len(x_values)-1]
+            for i in sample_indices:
+                if i < len(x_values):
+                    x = x_values[i]
+                    actual = y_values[i]
+                    predicted = self.best_individual.expression.evaluate(x)
+                    error = abs(predicted - actual)
+                    print(f"  x={x:.4f}: предсказано={predicted:.4f}, фактически={actual:.4f}, ошибка={error:.4f}")
+    
+    def select_builtin_function(self) -> Optional[Tuple[str, Callable[[float], float]]]:
+        """Предложить пользователю выбрать встроенную функцию"""
+        print("\nДоступные встроенные функции:")
+        print("-" * 40)
+        
+        func_list = list(self.tester.test_functions.items())
+        for i, (name, _) in enumerate(func_list, 1):
+            print(f"  {i}. {name}")
+        print("-" * 40)
+        
+        try:
+            choice = input(f"Выберите функцию (1-{len(func_list)}): ").strip()
+            choice_idx = int(choice) - 1
+            
+            if 0 <= choice_idx < len(func_list):
+                return func_list[choice_idx]
+            else:
+                print("Ошибка: неверный номер функции.")
+                return None
+        except ValueError:
+            print("Ошибка: введите число.")
+            return None
+    
+    def run_evolution_on_builtin(self) -> None:
+        """Запустить эволюцию на встроенной функции"""
+        func_result = self.select_builtin_function()
+        
+        if func_result is None:
+            return
+        
+        func_name, target_func = func_result
+        
+        print("\n" + "=" * 50)
+        print(f"ЗАПУСК ЭВОЛЮЦИИ НА ФУНКЦИИ: {func_name}")
+        print("=" * 50)
+        
+        # Инициализировать ГА
+        self.ga = GeneticAlgorithm(**self.default_ga_params)
+        
+        # Использовать тестовые точки по умолчанию
+        test_points = self.tester.test_ranges["default"]
+        
+        print(f"\nПараметры эволюции:")
+        print(f"  Функция: {func_name}")
+        print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+        print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+        print(f"  Тестовых точек: {len(test_points)}")
+        print()
+        
+        # Запустить эволюцию
+        self.best_individual = self.ga.evolve(target_func, test_points, verbose=True)
+        
+        # Сохранить результаты
+        if self.best_individual:
+            # Оценка на валидационных точках
+            validation_points = [i * 0.15 for i in range(-25, 26)]
+            validation_errors = []
+            
+            for x in validation_points:
+                predicted = self.best_individual.expression.evaluate(x)
+                actual = target_func(x)
+                error = abs(predicted - actual)
+                validation_errors.append(error)
+            
+            avg_val_error = sum(validation_errors) / len(validation_errors)
+            max_val_error = max(validation_errors)
+            
+            self.last_results = {
+                'type': 'builtin',
+                'function_name': func_name,
+                'expression': self.best_individual.expression.to_string(),
+                'fitness': self.best_individual.fitness,
+                'validation_avg_error': avg_val_error,
+                'validation_max_error': max_val_error,
+                'generations': len(self.ga.best_fitness_history) if self.ga else 0
+            }
+            
+            print("\n" + "-" * 50)
+            print("РЕЗУЛЬТАТ:")
+            print(f"  Выражение: {self.last_results['expression']}")
+            print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
+            print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
+            print(f"  Поколений: {self.last_results['generations']}")
+            
+            # Примеры предсказаний
+            print("\nПримеры предсказаний:")
+            sample_points = [-2.0, -1.0, 0.0, 1.0, 2.0]
+            for x in sample_points:
+                predicted = self.best_individual.expression.evaluate(x)
+                actual = target_func(x)
+                error = abs(predicted - actual)
+                print(f"  x={x:4.1f}: предсказано={predicted:8.4f}, фактически={actual:8.4f}, ошибка={error:.4f}")
+    
+    def view_last_results(self) -> None:
+        """Показать результаты последнего запуска"""
+        print("\n" + "=" * 50)
+        print("РЕЗУЛЬТАТЫ ПОСЛЕДНЕГО ЗАПУСКА")
+        print("=" * 50)
+        
+        if self.last_results is None:
+            print("Нет результатов последнего запуска.")
+            print("Сначала выполните запуск эволюции (пункт 1 или 2).")
+            return
+        
+        if self.last_results.get('type') == 'data':
+            print("Тип: Аппроксимация данных из файла")
+            print(f"Количество точек данных: {self.last_results.get('data_points', 'N/A')}")
+        elif self.last_results.get('type') == 'builtin':
+            print("Тип: Встроенная функция")
+            print(f"Функция: {self.last_results.get('function_name', 'N/A')}")
+        
+        print(f"\nНайденное выражение:")
+        print(f"  {self.last_results.get('expression', 'N/A')}")
+        
+        print(f"\nМетрики качества:")
+        print(f"  Ошибка на обучении (MSE): {self.last_results.get('fitness', 'N/A')}")
+        
+        if 'validation_avg_error' in self.last_results:
+            print(f"  Средняя ошибка на валидации: {self.last_results['validation_avg_error']:.6f}")
+            print(f"  Максимальная ошибка на валидации: {self.last_results['validation_max_error']:.6f}")
+        
+        print(f"\nСтатистика эволюции:")
+        print(f"  Поколений: {self.last_results.get('generations', 'N/A')}")
+    
+    def save_expression_to_file(self) -> None:
+        """Сохранить найденное выражение в файл"""
+        print("\n" + "=" * 50)
+        print("СОХРАНЕНИЕ ВЫРАЖЕНИЯ В ФАЙЛ")
+        print("=" * 50)
+        
+        if self.best_individual is None:
+            print("Нет выражения для сохранения.")
+            print("Сначала выполните запуск эволюции (пункт 1 или 2).")
+            return
+        
+        filename = input("Введите имя файла для сохранения: ").strip()
+        
+        if not filename:
+            print("Ошибка: имя файла не может быть пустым.")
+            return
+        
+        expression = self.best_individual.expression.to_string()
+        fitness = self.best_individual.fitness
+        
+        try:
+            with open(filename, 'w') as f:
+                f.write("# Результат эволюционного аппроксиматора\n")
+                f.write(f"# Ошибка (MSE): {fitness}\n")
+                f.write(f"#\n")
+                f.write(f"Выражение: {expression}\n")
+                
+                # Добавить информацию о параметрах ГА
+                if self.ga:
+                    f.write(f"\n# Параметры генетического алгоритма:\n")
+                    f.write(f"# population_size: {self.ga.population_size}\n")
+                    f.write(f"# mutation_rate: {self.ga.mutation_rate}\n")
+                    f.write(f"# crossover_rate: {self.ga.crossover_rate}\n")
+                    f.write(f"# max_generations: {self.ga.max_generations}\n")
+                    f.write(f"# max_depth: {self.ga.generator.max_depth if hasattr(self.ga, 'generator') else 'N/A'}\n")
+                
+                # Добавить примеры вычислений
+                f.write(f"\n# Примеры вычислений:\n")
+                test_x = [-2.0, -1.0, 0.0, 1.0, 2.0]
+                for x in test_x:
+                    result = self.best_individual.expression.evaluate(x)
+                    f.write(f"# f({x}) = {result}\n")
+            
+            print(f"Выражение успешно сохранено в файл '{filename}'.")
+            
+        except PermissionError:
+            print(f"Ошибка: нет прав на запись в файл '{filename}'.")
+        except Exception as e:
+            print(f"Ошибка при сохранении файла: {e}")
+    
+    def run(self) -> None:
+        """Запустить главный цикл приложения"""
+        print("\n" + "=" * 50)
+        print("   ДОБРО ПОЖАЛОВАТЬ В ЭВОЛЮЦИОННЫЙ АППРОКСИМАТОР!")
+        print("=" * 50)
+        
+        while True:
+            self.display_menu()
+            choice = self.get_user_choice()
+            
+            if choice == 1:
+                x_values, y_values = self.load_data_from_file()
+                if x_values and y_values:
+                    self.run_evolution_on_data(x_values, y_values)
+            
+            elif choice == 2:
+                self.run_evolution_on_builtin()
+            
+            elif choice == 3:
+                self.view_last_results()
+            
+            elif choice == 4:
+                self.save_expression_to_file()
+            
+            elif choice == 5:
+                print("\n" + "=" * 50)
+                print("СПАСИБО ЗА ИСПОЛЬЗОВАНИЕ ПРОГРАММЫ!")
+                print("До свидания!")
+                print("=" * 50 + "\n")
+                break
+            
+            else:
+                print("\nНекорректный ввод. Пожалуйста, выберите пункт от 1 до 5.")
+
+
 def main():
     """Основная функция"""
-    
-    print("\n" + "="*60)
-    print("ЭВОЛЮЦИОНИРУЮЩИЙ УНИВЕРСАЛЬНЫЙ АППРОКСИМАТОР")
-    print("Версия 1.0")
-    print("="*60)
-    
-    # Запустить тестирование
-    tester = ApproximatorTester()
-    results = tester.run_all_tests()
-    
-    # Финальный отчет
-    print(f"\n{'='*60}")
-    print("ЗАВЕРШЕНИЕ РАБОТЫ")
-    print(f"{'='*60}")
-    
-    successful_tests = sum(1 for r in results if r['validation_avg_error'] < 0.5)
-    total_tests = len(results)
-    
-    print(f"\nУспешно пройдено тестов: {successful_tests}/{total_tests}")
-    
-    if successful_tests == total_tests:
-        print("✓ Все тесты пройдены успешно!")
-        print("\nАппроксиматор готов к использованию.")
-        print("\nПример использования:")
-        print("""
-    from approximator import GeneticAlgorithm
-    
-    # Создать аппроксиматор
-    ga = GeneticAlgorithm(population_size=100, max_generations=500)
-    
-    # Целевая функция
-    target = lambda x: math.sin(x) + x**2
-    
-    # Точки для обучения
-    points = [i * 0.1 for i in range(-30, 31)]
-    
-    # Запустить эволюцию
-    best = ga.evolve(target, points)
-    
-    # Использовать найденное выражение
-    result = best.expression.evaluate(2.5)
-        """)
-    else:
-        print(f"⚠ Некоторые тесты требуют улучшения ({total_tests - successful_tests} неудачных)")
-    
-    print(f"\n{'='*60}\n")
+    app = EvolutionaryApproximatorApp()
+    app.run()
 
 
 if __name__ == "__main__":
