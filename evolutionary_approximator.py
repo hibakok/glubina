@@ -736,12 +736,13 @@ class GeneticAlgorithm:
         return expr
     
     def evaluate_fitness(self, individual: Individual, 
-                        target_function: Callable[[List[float]], List[float]],
+                        target_values: List[List[float]],
                         test_points: List[List[float]]) -> float:
         """Вычислить приспособленность особи.
         
         test_points - список входных векторов (каждый вектор размерности input_dim)
-        target_function - функция, принимающая вектор и возвращающая вектор выходов размерности output_dim
+        target_values - предвычисленные значения целевой функции для всех test_points.
+                        target_values[i] - вектор выходов размерности output_dim для i-й точки.
         
         Для многомерного выхода fitness считается как MSE (средний квадрат ошибки) по всем точкам
         и по всем компонентам выхода.
@@ -764,9 +765,9 @@ class GeneticAlgorithm:
             predicted_batch = individual.expressions[i].evaluate_batch(test_points)
             predicted_batches.append(predicted_batch)
         
-        # Вычисляем ошибку для каждой точки
+        # Вычисляем ошибку для каждой точки, используя предвычисленные целевые значения
         for point_idx in range(num_points):
-            actual = target_function(test_points[point_idx])
+            actual = target_values[point_idx]  # Берём готовые значения из массива
             
             # Суммировать квадрат ошибки по всем компонентам выхода
             for i in range(num_outputs):
@@ -980,23 +981,27 @@ class GeneticAlgorithm:
         return index
     
     def _compute_mse_for_constants(self, expression: Node, constants: List[float], 
-                                   target_function: Callable[[List[float]], List[float]],
+                                   target_values: List[List[float]],
                                    test_points: List[List[float]]) -> float:
-        """Вычислить MSE для заданных значений констант"""
+        """Вычислить MSE для заданных значений констант.
+        
+        target_values - предвычисленные значения целевой функции для всех test_points.
+                        target_values[i][0] - значение целевой функции для i-й точки (для первого выхода).
+        """
         # Записать константы в дерево
         self.set_constants_in_tree(expression, constants, 0)
         
-        # Вычислить ошибку
+        # Вычислить ошибку, используя предвычисленные целевые значения
         total_squared_error = 0.0
         num_points = len(test_points)
         
         if num_points == 0:
             return float('inf')
         
-        for x_vec in test_points:
+        for idx, x_vec in enumerate(test_points):
             try:
                 predicted = expression.evaluate(x_vec)
-                actual = target_function(x_vec)[0]  # Для первого выхода
+                actual = target_values[idx][0]  # Берём готовое значение из массива (для первого выхода)
                 diff = predicted - actual
                 diff = max(-1e6, min(1e6, diff))
                 total_squared_error += diff * diff
@@ -1006,12 +1011,13 @@ class GeneticAlgorithm:
         return total_squared_error / num_points
     
     def optimize_constants_nelder_mead(self, individual: Individual,
-                                       target_function: Callable[[List[float]], List[float]],
+                                       target_values: List[List[float]],
                                        test_points: List[List[float]],
                                        max_iterations: int = 100,
                                        tol: float = 1e-8) -> bool:
         """Оптимизация констант методом Нелдера-Мида (simplex method).
         
+        target_values - предвычисленные значения целевой функции для всех test_points.
         Возвращает True если оптимизация была выполнена успешно.
         """
         # Работаем только с первым деревом (для M=1)
@@ -1031,7 +1037,7 @@ class GeneticAlgorithm:
         
         # Функция ошибки для оптимизации
         def objective(consts):
-            return self._compute_mse_for_constants(expr, list(consts), target_function, test_points)
+            return self._compute_mse_for_constants(expr, list(consts), target_values, test_points)
         
         # Инициализация симплекса
         simplex = [initial_constants[:]]
@@ -1108,12 +1114,13 @@ class GeneticAlgorithm:
         return False
     
     def optimize_constants_coordinate_descent(self, individual: Individual,
-                                              target_function: Callable[[List[float]], List[float]],
+                                              target_values: List[List[float]],
                                               test_points: List[List[float]],
                                               max_iterations: int = 100,
                                               tol: float = 1e-8) -> bool:
         """Оптимизация констант координатным спуском.
         
+        target_values - предвычисленные значения целевой функции для всех test_points.
         Поочерёдно оптимизируем каждую константу, фиксируя остальные.
         Возвращает True если оптимизация была выполнена успешно.
         """
@@ -1128,7 +1135,7 @@ class GeneticAlgorithm:
             return False
         
         current_constants = [c.value for c in constants_nodes]
-        best_fitness = self._compute_mse_for_constants(expr, current_constants, target_function, test_points)
+        best_fitness = self._compute_mse_for_constants(expr, current_constants, target_values, test_points)
         
         improved = True
         iteration = 0
@@ -1156,11 +1163,11 @@ class GeneticAlgorithm:
                 # Вычисляем fitness для c и d
                 test_consts_c = current_constants[:]
                 test_consts_c[i] = c
-                fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_function, test_points)
+                fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_values, test_points)
                 
                 test_consts_d = current_constants[:]
                 test_consts_d[i] = d
-                fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_function, test_points)
+                fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_values, test_points)
                 
                 # Итерации золотого сечения
                 for _ in range(20):
@@ -1171,7 +1178,7 @@ class GeneticAlgorithm:
                         c = a + resphi * (b - a)
                         test_consts_c = current_constants[:]
                         test_consts_c[i] = c
-                        fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_function, test_points)
+                        fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_values, test_points)
                     else:
                         a = c
                         c = d
@@ -1179,7 +1186,7 @@ class GeneticAlgorithm:
                         d = b - resphi * (b - a)
                         test_consts_d = current_constants[:]
                         test_consts_d[i] = d
-                        fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_function, test_points)
+                        fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_values, test_points)
                 
                 # Лучшее значение
                 best_val = min(fitness_c, fitness_d)
@@ -1190,7 +1197,7 @@ class GeneticAlgorithm:
                     improved = True
         
         # Проверка улучшения
-        final_fitness = self._compute_mse_for_constants(expr, current_constants, target_function, test_points)
+        final_fitness = self._compute_mse_for_constants(expr, current_constants, target_values, test_points)
         
         if final_fitness < best_fitness - tol:
             self.set_constants_in_tree(individual.expressions[0], current_constants, 0)
@@ -1199,14 +1206,14 @@ class GeneticAlgorithm:
         return False
     
     def optimize_constants(self, individual: Individual,
-                          target_function: Callable[[List[float]], List[float]],
+                          target_values: List[List[float]],
                           test_points: List[List[float]],
                           method: str = 'hybrid') -> bool:
         """Общая функция оптимизации констант.
         
         Args:
             individual: Особь для оптимизации
-            target_function: Целевая функция
+            target_values: Предвычисленные значения целевой функции для всех test_points
             test_points: Точки данных
             method: 'nelder', 'coordinate', или 'hybrid'
         
@@ -1214,13 +1221,13 @@ class GeneticAlgorithm:
             True если оптимизация улучшила фитнес
         """
         if method == 'nelder':
-            return self.optimize_constants_nelder_mead(individual, target_function, test_points)
+            return self.optimize_constants_nelder_mead(individual, target_values, test_points)
         elif method == 'coordinate':
-            return self.optimize_constants_coordinate_descent(individual, target_function, test_points)
+            return self.optimize_constants_coordinate_descent(individual, target_values, test_points)
         else:  # hybrid
             # Сначала Нелдер-Мид, потом координатный спуск
-            result1 = self.optimize_constants_nelder_mead(individual, target_function, test_points, max_iterations=50)
-            result2 = self.optimize_constants_coordinate_descent(individual, target_function, test_points, max_iterations=50)
+            result1 = self.optimize_constants_nelder_mead(individual, target_values, test_points, max_iterations=50)
+            result2 = self.optimize_constants_coordinate_descent(individual, target_values, test_points, max_iterations=50)
             return result1 or result2
     
     def combine_expressions(self, expr1: Node, expr2: Node) -> Node:
@@ -1404,11 +1411,19 @@ class GeneticAlgorithm:
         """
         
         try:
+            # ПРЕДВЫЧИСЛЕНИЕ ЦЕЛЕВЫХ ЗНАЧЕНИЙ
+            # Один раз вычисляем целевую функцию для всех тестовых точек
+            # и сохраняем результаты в массив для последующего использования
+            target_values = []
+            for point in test_points:
+                result = target_function(point)
+                target_values.append(result)
+            
             self.initialize_population()
             
-            # Оценить начальную популяцию
+            # Оценить начальную популяцию, используя предвычисленные значения
             for individual in self.population:
-                self.evaluate_fitness(individual, target_function, test_points)
+                self.evaluate_fitness(individual, target_values, test_points)
             
             best_ever = min(self.population, key=lambda ind: ind.fitness)
             
@@ -1467,13 +1482,13 @@ class GeneticAlgorithm:
                 
                 # Адаптивная оптимизация констант для лучших особей (раз в 5 поколений)
                 if generation > 0 and generation % 5 == 0:
-                    # Оптимизируем топ-20% популяции
+                    # Оптимизируем топ-20% популяции, используя предвычисленные значения
                     elite_count = max(1, self.population_size // 5)
                     for i in range(elite_count):
-                        self.optimize_constants(self.population[i], target_function, test_points, method='hybrid')
+                        self.optimize_constants(self.population[i], target_values, test_points, method='hybrid')
                     # Переоценить фитнес после оптимизации
                     for i in range(elite_count):
-                        self.evaluate_fitness(self.population[i], target_function, test_points)
+                        self.evaluate_fitness(self.population[i], target_values, test_points)
                 
                 # Создание нового поколения
                 new_population = []
@@ -1496,9 +1511,9 @@ class GeneticAlgorithm:
                     if len(new_population) < self.population_size:
                         new_population.append(child2)
                 
-                # Оценить новую популяцию
+                # Оценить новую популяцию, используя предвычисленные значения
                 for individual in new_population:
-                    self.evaluate_fitness(individual, target_function, test_points)
+                    self.evaluate_fitness(individual, target_values, test_points)
                 
                 self.population = new_population
                 generation += 1
