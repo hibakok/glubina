@@ -27,4 +27,15 @@ node_modules/
 dist/
 build/
 target/
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.nyc_output/
+coverage/
+
+# OS generated files
+.DS_Store
+Thumbs.db
 ```

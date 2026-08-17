@@ -299,13 +299,51 @@ class GeneticAlgorithm:
                  target_fitness: float = 1e-6,
                  max_depth: int = 8,
                  input_dim: int = 1,
-                 output_dim: int = 1):
+                 output_dim: int = 1,
+                 auto_scale_params: bool = True):
+        """
+        Инициализация генетического алгоритма.
         
-        self.population_size = population_size
-        self.mutation_rate = mutation_rate
+        Args:
+            population_size: Базовый размер популяции (будет масштабирован при auto_scale_params=True)
+            mutation_rate: Вероятность мутации
+            crossover_rate: Вероятность кроссовера
+            elitism_count: Количество элитных особей
+            max_generations: Базовое максимальное количество поколений (будет масштабировано)
+            target_fitness: Целевая приспособленность
+            max_depth: Максимальная глубина дерева выражения
+            input_dim: Размерность входного вектора
+            output_dim: Размерность выходного вектора
+            auto_scale_params: Если True, автоматически масштабировать параметры в зависимости от размерности
+        """
+        
+        # Автоматическое масштабирование параметров в зависимости от размерности задачи
+        if auto_scale_params:
+            # Масштабирующий коэффициент на основе общей сложности задачи
+            # Чем выше размерность входа и выхода, тем сложнее задача
+            total_dim = input_dim + output_dim
+            scale_factor = max(1.0, total_dim / 2.0)
+            
+            # Увеличиваем размер популяции пропорционально размерности
+            # Минимум 100, максимум 500
+            scaled_population = int(population_size * scale_factor)
+            self.population_size = max(100, min(500, scaled_population))
+            
+            # Увеличиваем количество поколений пропорционально размерности
+            # Минимум исходное значение, максимум 2000
+            scaled_generations = int(max_generations * scale_factor)
+            self.max_generations = max(max_generations, min(2000, scaled_generations))
+            
+            # Немного увеличиваем вероятность мутации для более сложных задач
+            # чтобы поддерживать разнообразие
+            self.mutation_rate = min(0.5, mutation_rate + 0.05 * (total_dim - 2))
+        else:
+            self.population_size = population_size
+            self.max_generations = max_generations
+            self.mutation_rate = mutation_rate
+        
         self.crossover_rate = crossover_rate
         self.elitism_count = elitism_count
-        self.max_generations = max_generations
         self.target_fitness = target_fitness
         self.input_dim = input_dim  # Размерность входного вектора
         self.output_dim = output_dim  # Размерность выходного вектора (M)
@@ -314,21 +352,61 @@ class GeneticAlgorithm:
         self.best_fitness_history: List[float] = []
         self.avg_fitness_history: List[float] = []
         self.tournament_size = 7
+        self.auto_scale_params = auto_scale_params
     
     def initialize_population(self):
         """Инициализировать начальную популяцию
         
         Для многомерного выхода (M>1) каждая особь содержит M деревьев выражений.
+        При инициализации гарантируется, что разные деревья используют разные входные переменные,
+        чтобы эволюция начиналась с разнообразного поиска.
         """
         self.population = []
-        for _ in range(self.population_size):
+        for ind_idx in range(self.population_size):
             trees = []
-            for _ in range(self.output_dim):
+            # Гарантируем, что хотя бы часть начальных деревьев использует разные переменные
+            # Циклически распределяем индексы переменных между деревьями
+            for tree_idx in range(self.output_dim):
                 self.generator.reset_counter()
-                expr = self.generator.generate_random()
+                # Для первого дерева каждой особи используем циклический индекс переменной
+                # Это гарантирует покрытие всех входных измерений в начальной популяции
+                if self.input_dim > 1 and tree_idx < self.input_dim:
+                    # Создаём дерево с гарантированным использованием конкретной переменной
+                    expr = self._generate_tree_with_variable(tree_idx % self.input_dim)
+                else:
+                    expr = self.generator.generate_random()
                 trees.append(expr)
             individual = Individual(trees if self.output_dim > 1 else trees[0])
             self.population.append(individual)
+    
+    def _generate_tree_with_variable(self, var_index: int) -> Node:
+        """Сгенерировать случайное выражение, гарантирующее использование переменной x[var_index]
+        
+        Метод создаёт дерево, в котором хотя бы один лист - переменная с заданным индексом.
+        """
+        # Сначала генерируем случайное дерево
+        self.generator.reset_counter()
+        expr = self.generator.generate_random()
+        
+        # С вероятностью 50% заменяем случайный узел на нужную переменную
+        if random.random() < 0.5:
+            node_to_replace = self.get_random_node(expr)
+            if node_to_replace and node_to_replace is not expr:
+                parent = self.find_parent(expr, node_to_replace)
+                if parent:
+                    new_var = Variable(var_index)
+                    if isinstance(parent, BinaryOperator):
+                        if parent.left is node_to_replace:
+                            parent.left = new_var
+                        else:
+                            parent.right = new_var
+                    elif isinstance(parent, UnaryOperator):
+                        parent.operand = new_var
+            elif expr.depth() == 1:
+                # Если дерево очень простое, просто возвращаем переменную
+                expr = Variable(var_index)
+        
+        return expr
     
     def evaluate_fitness(self, individual: Individual, 
                         target_function: Callable[[List[float]], List[float]],
@@ -338,21 +416,31 @@ class GeneticAlgorithm:
         test_points - список входных векторов (каждый вектор размерности input_dim)
         target_function - функция, принимающая вектор и возвращающая вектор выходов размерности output_dim
         
-        Для многомерного выхода fitness считается как сумма MSE по всем компонентам выхода.
+        Для многомерного выхода fitness считается как MSE (средний квадрат ошибки) по всем точкам
+        и по всем компонентам выхода.
+        Формула: MSE = sum((predicted[i] - actual[i])^2) / (num_points * num_outputs)
         """
-        total_error = 0.0
+        total_squared_error = 0.0
+        num_points = len(test_points)
+        num_outputs = self.output_dim
+        
+        if num_points == 0:
+            return float('inf')
         
         for x_vec in test_points:
             # Вычислить предсказания для всех компонент выхода
-            predicted = [individual.expressions[i].evaluate(x_vec) for i in range(self.output_dim)]
+            predicted = [individual.expressions[i].evaluate(x_vec) for i in range(num_outputs)]
             actual = target_function(x_vec)
             
-            # Суммировать ошибку по всем компонентам выхода
-            for i in range(self.output_dim):
-                error = min(abs(predicted[i] - actual[i]), 1e6)
-                total_error += error
+            # Суммировать квадрат ошибки по всем компонентам выхода
+            for i in range(num_outputs):
+                diff = predicted[i] - actual[i]
+                # Ограничиваем максимальную ошибку чтобы избежать переполнения
+                diff = max(-1e6, min(1e6, diff))
+                total_squared_error += diff * diff
         
-        mse = total_error / len(test_points)
+        # MSE = сумма квадратов ошибок / (кол-во точек * кол-во выходов)
+        mse = total_squared_error / (num_points * num_outputs)
         individual.fitness = mse
         return mse
     
@@ -827,6 +915,14 @@ class ApproximatorTester:
             "3D_вектор": lambda x: [x[0], x[0] ** 2, math.sin(x[0])],
         }
         
+        # Многомерные функции с многомерным входом (input_dim > 1)
+        self.multidim_input_functions = {
+            "2D_вход_линейная": lambda x: [x[0] + x[1]],  # x[0] + x[1]
+            "2D_вход_скалярное_произведение": lambda x: [x[0] * x[1]],  # x[0] * x[1]
+            "3D_вход_сумма": lambda x: [x[0] + x[1] + x[2]],  # сумма всех компонент
+            "4D_вход_комбо": lambda x: [x[0] * x[1] + math.sin(x[2]) + x[3]],  # комбинированная
+        }
+        
         # Словесные описания и формулы встроенных функций
         self.function_descriptions = {
             "Линейная": "f(x) = [2x + 3]",
@@ -844,11 +940,92 @@ class ApproximatorTester:
             "3D_вектор": "f(x) = [x, x², sin(x)]",
         }
         
+        self.multidim_input_descriptions = {
+            "2D_вход_линейная": "f(x₁,x₂) = [x₁ + x₂]",
+            "2D_вход_скалярное_произведение": "f(x₁,x₂) = [x₁·x₂]",
+            "3D_вход_сумма": "f(x₁,x₂,x₃) = [x₁ + x₂ + x₃]",
+            "4D_вход_комбо": "f(x₁,x₂,x₃,x₄) = [x₁·x₂ + sin(x₃) + x₄]",
+        }
+        
+        # Базовые диапазоны для генерации тестовых точек
+        self.base_ranges = {
+            "default": (-3.0, 3.0, 0.1),  # (min, max, step)
+            "wide": (-5.0, 5.0, 0.2),
+            "narrow": (-1.0, 1.0, 0.05),
+        }
+        
+        # Генерируем test_ranges для одномерного входа (обратная совместимость)
         self.test_ranges = {
             "default": [[i * 0.1] for i in range(-30, 31)],
             "wide": [[i * 0.2] for i in range(-50, 51)],
             "narrow": [[i * 0.05] for i in range(-20, 21)],
         }
+    
+    def generate_test_points(self, input_dim: int = 1, range_name: str = "default",
+                            custom_ranges: List[Tuple[float, float]] = None) -> List[List[float]]:
+        """Генерировать тестовые точки для заданной размерности входа.
+        
+        Args:
+            input_dim: Размерность входного вектора
+            range_name: Название предустановленного диапазона ("default", "wide", "narrow")
+            custom_ranges: Список кортежей (min, max) для каждого измерения.
+                          Если None, используется range_name.
+        
+        Returns:
+            Список входных векторов размерности input_dim
+        
+        Для многомерного входа генерируются точки как декартово произведение диапазонов
+        по каждому измерению (с ограничением общего количества точек).
+        """
+        if custom_ranges is not None:
+            # Использовать пользовательские диапазоны
+            ranges = custom_ranges
+        else:
+            # Использовать предустановленные диапазоны
+            if range_name not in self.base_ranges:
+                range_name = "default"
+            min_val, max_val, step = self.base_ranges[range_name]
+            ranges = [(min_val, max_val)] * input_dim
+        
+        # Генерируем точки
+        if input_dim == 1:
+            # Одномерный случай - просто последовательность
+            min_val, max_val = ranges[0]
+            points = []
+            current = min_val
+            while current <= max_val:
+                points.append([current])
+                current += step
+            return points
+        else:
+            # Многомерный случай - декартово произведение с ограничением количества точек
+            # Чтобы не генерировать слишком много точек, используем разумный лимит
+            max_points = 500  # Максимальное количество точек
+            
+            # Сначала генерируем 1D точки для каждого измерения
+            dims_points = []
+            for (min_val, max_val) in ranges:
+                dim_points = []
+                # Адаптируем шаг чтобы уложиться в лимит
+                estimated_per_dim = int(max_points ** (1.0 / input_dim))
+                estimated_per_dim = max(5, min(estimated_per_dim, 20))  # от 5 до 20 точек на измерение
+                
+                step = (max_val - min_val) / (estimated_per_dim - 1) if estimated_per_dim > 1 else 0
+                current = min_val
+                while current <= max_val + step/2:  # +step/2 для включения последней точки
+                    dim_points.append(current)
+                    current += step
+                dims_points.append(dim_points)
+            
+            # Генерируем декартово произведение
+            from itertools import product
+            points = []
+            for combo in product(*dims_points):
+                points.append(list(combo))
+                if len(points) >= max_points:
+                    break
+            
+            return points
     
     def run_test(self, func_name: str, func: Callable[[List[float]], List[float]],
                 test_points: List[List[float]], ga: GeneticAlgorithm) -> Tuple[Individual, dict]:
@@ -926,28 +1103,45 @@ class ApproximatorTester:
         
         return best_individual, results
     
-    def run_all_tests(self, output_dim: int = 1) -> List[dict]:
-        """Запустить все тесты"""
+    def run_all_tests(self, output_dim: int = 1, input_dim: int = None) -> List[dict]:
+        """Запустить все тесты
+        
+        Args:
+            output_dim: Размерность выхода
+            input_dim: Размерность входа (если None, используется self.input_dim)
+        """
+        
+        if input_dim is None:
+            input_dim = self.input_dim
         
         print("\n" + "="*60)
         print("ЭВОЛЮЦИОНИРУЮЩИЙ УНИВЕРСАЛЬНЫЙ АППРОКСИМАТОР")
-        print(f"Размерность выхода: {output_dim}")
+        print(f"Размерность входа: {input_dim}, Размерность выхода: {output_dim}")
         print("="*60)
         print("\nЗапуск полного тестирования...\n")
         
         all_results = []
         
-        # Выбрать набор функций в зависимости от размерности выхода
-        if output_dim == 1:
+        # Выбрать набор функций в зависимости от размерности
+        if input_dim > 1:
+            # Для многомерного входа использовать функции с многомерным входом
+            test_functions = self.multidim_input_functions
+            func_descriptions = self.multidim_input_descriptions
+        elif output_dim == 1:
+            # Одномерный вход и выход
             test_functions = self.test_functions
             func_descriptions = self.function_descriptions
         else:
-            # Для многомерного выхода использовать многомерные функции
+            # Многомерный выход, но одномерный вход
             test_functions = self.multidim_test_functions
             func_descriptions = self.multidim_function_descriptions
         
+        # Сгенерировать тестовые точки для заданной размерности входа
+        test_points = self.generate_test_points(input_dim=input_dim, range_name="default")
+        
         for func_name, func in test_functions.items():
             # Создать новый ГА для каждого теста с оптимизированными параметрами
+            # auto_scale_params=True автоматически масштабирует параметры под размерность
             ga = GeneticAlgorithm(
                 population_size=150,
                 mutation_rate=0.4,
@@ -956,11 +1150,12 @@ class ApproximatorTester:
                 max_generations=600,
                 target_fitness=0.05,
                 max_depth=8,
-                input_dim=self.input_dim,
-                output_dim=output_dim
+                input_dim=input_dim,
+                output_dim=output_dim,
+                auto_scale_params=True  # Автоматически масштабировать параметры
             )
             
-            _, results = self.run_test(func_name, func, self.test_ranges["default"], ga)
+            _, results = self.run_test(func_name, func, test_points, ga)
             all_results.append(results)
         
         # Итоговая статистика
@@ -973,14 +1168,14 @@ class ApproximatorTester:
         total_time = sum(r['evolution_time'] for r in all_results)
         
         print(f"\nВсего тестов: {len(all_results)}")
-        print(f"Средняя ошибка обучения: {avg_fitness:.6f}")
+        print(f"Средняя ошибка обучения (MSE): {avg_fitness:.6f}")
         print(f"Средняя ошибка валидации: {avg_val_error:.6f}")
         print(f"Общее время тестирования: {total_time:.2f} сек")
         
         print(f"\nДетальные результаты по функциям:")
         for r in all_results:
             status = "✓" if r['validation_avg_error'] < 0.5 else "⚠"
-            print(f"  {status} {r['function_name']:20s}: ошибка={r['validation_avg_error']:.4f}")
+            print(f"  {status} {r['function_name']:25s}: ошибка={r['validation_avg_error']:.4f}, MSE={r['training_fitness']:.6f}")
         
         return all_results
 
