@@ -8,7 +8,6 @@ __pycache__/
 # Logs and temp files
 *.log
 *.tmp
-*.swp
 
 # Environment
 .env
@@ -27,12 +26,18 @@ node_modules/
 # Build artifacts
 dist/
 build/
-*.egg-info/
+target/
+
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# System files
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# OS
 .DS_Store
 Thumbs.db
 ```
