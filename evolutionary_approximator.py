@@ -256,14 +256,33 @@ class ExpressionGenerator:
 # ==================== Генетический алгоритм ====================
 
 class Individual:
-    """Особь в популяции"""
+    """Особь в популяции - может представлять одно дерево или набор деревьев для многомерного выхода"""
     
-    def __init__(self, expression: Node):
-        self.expression = expression
+    def __init__(self, expression):
+        """
+        expression может быть:
+        - Node: для одномерного выхода (M=1)
+        - List[Node]: для многомерного выхода (M>1)
+        """
+        if isinstance(expression, list):
+            self.expressions = expression  # Список деревьев для многомерного выхода
+        else:
+            self.expressions = [expression]  # Обертываем в список для единообразия
+        
         self.fitness = float('inf')
     
+    @property
+    def expression(self):
+        """Для обратной совместимости - возвращает первое дерево (для M=1)"""
+        return self.expressions[0] if self.expressions else None
+    
+    @property
+    def output_dim(self):
+        """Размерность выхода (количество деревьев)"""
+        return len(self.expressions)
+    
     def copy(self) -> 'Individual':
-        new_individual = Individual(self.expression.copy())
+        new_individual = Individual([expr.copy() for expr in self.expressions])
         new_individual.fitness = self.fitness
         return new_individual
 
@@ -279,7 +298,8 @@ class GeneticAlgorithm:
                  max_generations: int = 1000,
                  target_fitness: float = 1e-6,
                  max_depth: int = 8,
-                 input_dim: int = 1):
+                 input_dim: int = 1,
+                 output_dim: int = 1):
         
         self.population_size = population_size
         self.mutation_rate = mutation_rate
@@ -288,6 +308,7 @@ class GeneticAlgorithm:
         self.max_generations = max_generations
         self.target_fitness = target_fitness
         self.input_dim = input_dim  # Размерность входного вектора
+        self.output_dim = output_dim  # Размерность выходного вектора (M)
         self.generator = ExpressionGenerator(max_depth=max_depth, input_dim=input_dim)
         self.population: List[Individual] = []
         self.best_fitness_history: List[float] = []
@@ -295,31 +316,41 @@ class GeneticAlgorithm:
         self.tournament_size = 7
     
     def initialize_population(self):
-        """Инициализировать начальную популяцию"""
+        """Инициализировать начальную популяцию
+        
+        Для многомерного выхода (M>1) каждая особь содержит M деревьев выражений.
+        """
         self.population = []
         for _ in range(self.population_size):
-            self.generator.reset_counter()
-            expr = self.generator.generate_random()
-            individual = Individual(expr)
+            trees = []
+            for _ in range(self.output_dim):
+                self.generator.reset_counter()
+                expr = self.generator.generate_random()
+                trees.append(expr)
+            individual = Individual(trees if self.output_dim > 1 else trees[0])
             self.population.append(individual)
     
     def evaluate_fitness(self, individual: Individual, 
-                        target_function: Callable[[List[float]], float],
+                        target_function: Callable[[List[float]], List[float]],
                         test_points: List[List[float]]) -> float:
         """Вычислить приспособленность особи.
         
         test_points - список входных векторов (каждый вектор размерности input_dim)
-        target_function - функция, принимающая вектор и возвращающая скаляр
+        target_function - функция, принимающая вектор и возвращающая вектор выходов размерности output_dim
+        
+        Для многомерного выхода fitness считается как сумма MSE по всем компонентам выхода.
         """
         total_error = 0.0
         
         for x_vec in test_points:
-            predicted = individual.expression.evaluate(x_vec)
+            # Вычислить предсказания для всех компонент выхода
+            predicted = [individual.expressions[i].evaluate(x_vec) for i in range(self.output_dim)]
             actual = target_function(x_vec)
             
-            # Нормализованная ошибка с ограничением
-            error = min(abs(predicted - actual), 1e6)
-            total_error += error
+            # Суммировать ошибку по всем компонентам выхода
+            for i in range(self.output_dim):
+                error = min(abs(predicted[i] - actual[i]), 1e6)
+                total_error += error
         
         mse = total_error / len(test_points)
         individual.fitness = mse
@@ -333,49 +364,92 @@ class GeneticAlgorithm:
         return min(tournament, key=lambda ind: ind.fitness)
     
     def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
-        """Кроссовер между двумя особями"""
+        """Кроссовер между двумя особями с поддержкой многомерного выхода.
+        
+        При кроссовере можно обмениваться поддеревьями как внутри одного выхода,
+        так и между разными выходами (если размерность совпадает).
+        """
         if random.random() > self.crossover_rate:
             return parent1.copy(), parent2.copy()
         
-        # Найти случайные узлы для обмена
-        node1 = self.get_random_node(parent1.expression)
-        node2 = self.get_random_node(parent2.expression)
+        child1_trees = [expr.copy() for expr in parent1.expressions]
+        child2_trees = [expr.copy() for expr in parent2.expressions]
         
-        # Заменить узлы друг с другом (настоящий кроссовер)
-        if node1 and node2 and node1 is not parent1.expression and node2 is not parent2.expression:
-            child1_expr = parent1.expression.copy()
-            child2_expr = parent2.expression.copy()
-            
-            # Найти соответствующие узлы в копиях
-            node1_copy = self.find_corresponding_node(child1_expr, node1)
-            node2_copy = self.find_corresponding_node(child2_expr, node2)
-            
-            if node1_copy and node2_copy:
-                parent1_parent = self.find_parent(child1_expr, node1_copy)
-                parent2_parent = self.find_parent(child2_expr, node2_copy)
-                
-                if parent1_parent:
-                    if isinstance(parent1_parent, BinaryOperator):
-                        if parent1_parent.left is node1_copy:
-                            parent1_parent.left = node2_copy.copy()
-                        else:
-                            parent1_parent.right = node2_copy.copy()
-                    elif isinstance(parent1_parent, UnaryOperator):
-                        parent1_parent.operand = node2_copy.copy()
-                
-                if parent2_parent:
-                    if isinstance(parent2_parent, BinaryOperator):
-                        if parent2_parent.left is node2_copy:
-                            parent2_parent.left = node1_copy.copy()
-                        else:
-                            parent2_parent.right = node1_copy.copy()
-                    elif isinstance(parent2_parent, UnaryOperator):
-                        parent2_parent.operand = node1_copy.copy()
-                
-                return Individual(child1_expr), Individual(child2_expr)
+        # Выполнить несколько кроссоверов для разных деревьев
+        num_crossovers = max(1, self.output_dim // 2)
         
-        # Если не удалось сделать кроссовер, просто вернуть копии
-        return parent1.copy(), parent2.copy()
+        for _ in range(num_crossovers):
+            # Случайно выбрать индекс дерева для кроссовера
+            tree_idx = random.randint(0, self.output_dim - 1)
+            
+            # Найти случайные узлы для обмена в выбранных деревьях
+            node1 = self.get_random_node(child1_trees[tree_idx])
+            node2 = self.get_random_node(child2_trees[tree_idx])
+            
+            # Заменить узлы друг с другом
+            if node1 and node2 and node1 is not child1_trees[tree_idx] and node2 is not child2_trees[tree_idx]:
+                node1_copy = self.find_corresponding_node(child1_trees[tree_idx], node1)
+                node2_copy = self.find_corresponding_node(child2_trees[tree_idx], node2)
+                
+                if node1_copy and node2_copy:
+                    parent1_parent = self.find_parent(child1_trees[tree_idx], node1_copy)
+                    parent2_parent = self.find_parent(child2_trees[tree_idx], node2_copy)
+                    
+                    if parent1_parent:
+                        if isinstance(parent1_parent, BinaryOperator):
+                            if parent1_parent.left is node1_copy:
+                                parent1_parent.left = node2_copy.copy()
+                            else:
+                                parent1_parent.right = node2_copy.copy()
+                        elif isinstance(parent1_parent, UnaryOperator):
+                            parent1_parent.operand = node2_copy.copy()
+                    
+                    if parent2_parent:
+                        if isinstance(parent2_parent, BinaryOperator):
+                            if parent2_parent.left is node2_copy:
+                                parent2_parent.left = node1_copy.copy()
+                            else:
+                                parent2_parent.right = node1_copy.copy()
+                        elif isinstance(parent2_parent, UnaryOperator):
+                            parent2_parent.operand = node1_copy.copy()
+        
+        # С вероятностью выполнить кроссовер между разными деревьями (между выходами)
+        if self.output_dim > 1 and random.random() < 0.3:
+            # Выбрать два разных дерева в каждой особи
+            tree_idx1 = random.randint(0, self.output_dim - 1)
+            tree_idx2 = random.randint(0, self.output_dim - 1)
+            if tree_idx1 != tree_idx2:
+                # Обменяться случайными поддеревьями между разными выходами
+                node1 = self.get_random_node(child1_trees[tree_idx1])
+                node2 = self.get_random_node(child1_trees[tree_idx2])
+                
+                if node1 and node2:
+                    node1_copy = self.find_corresponding_node(child1_trees[tree_idx1], node1)
+                    node2_copy = self.find_corresponding_node(child1_trees[tree_idx2], node2)
+                    
+                    if node1_copy and node2_copy:
+                        parent1_parent = self.find_parent(child1_trees[tree_idx1], node1_copy)
+                        parent2_parent = self.find_parent(child1_trees[tree_idx2], node2_copy)
+                        
+                        if parent1_parent and parent2_parent:
+                            if isinstance(parent1_parent, BinaryOperator):
+                                if parent1_parent.left is node1_copy:
+                                    parent1_parent.left = node2_copy.copy()
+                                else:
+                                    parent1_parent.right = node2_copy.copy()
+                            elif isinstance(parent1_parent, UnaryOperator):
+                                parent1_parent.operand = node2_copy.copy()
+                            
+                            if isinstance(parent2_parent, BinaryOperator):
+                                if parent2_parent.left is node2_copy:
+                                    parent2_parent.left = node1_copy.copy()
+                                else:
+                                    parent2_parent.right = node1_copy.copy()
+                            elif isinstance(parent2_parent, UnaryOperator):
+                                parent2_parent.operand = node1_copy.copy()
+        
+        return Individual(child1_trees if self.output_dim > 1 else child1_trees[0]), \
+               Individual(child2_trees if self.output_dim > 1 else child2_trees[0])
     
     def find_corresponding_node(self, tree: Node, target: Node) -> Optional[Node]:
         """Найти узел в дереве, соответствующий целевому узлу по структуре"""
@@ -415,87 +489,102 @@ class GeneticAlgorithm:
             return UnaryOperator(expr1.copy(), op_func, op_symbol)
     
     def mutate(self, individual: Individual) -> Individual:
-        """Мутация особи"""
+        """Мутация особи с поддержкой многомерного выхода.
+        
+        При мутации случайно выбирается, какое из M деревьев мутировать.
+        """
         if random.random() > self.mutation_rate:
             return individual
         
-        new_expr = individual.expression.copy()
+        new_trees = [expr.copy() for expr in individual.expressions]
         
-        # Типы мутаций с разными вероятностями
-        mutation_type = random.choices(
-            ['replace_subtree', 'change_constant', 'add_operator', 'simplify'],
-            weights=[0.4, 0.3, 0.2, 0.1]
-        )[0]
+        # Для многомерного выхода: выбрать случайное дерево для мутации
+        # или мутировать несколько деревьев
+        if self.output_dim > 1:
+            num_mutations = random.randint(1, max(1, self.output_dim // 2))
+            trees_to_mutate = random.sample(range(self.output_dim), min(num_mutations, self.output_dim))
+        else:
+            trees_to_mutate = [0]
         
-        if mutation_type == 'replace_subtree':
-            # Заменить случайное поддерево на новое случайное выражение
-            nodes = self.collect_all_nodes(new_expr)
-            if len(nodes) > 1:
-                node_to_replace = random.choice(nodes[1:])  # Не корень
-                parent = self.find_parent(new_expr, node_to_replace)
-                
-                if parent:
-                    if isinstance(parent, BinaryOperator):
-                        if parent.left is node_to_replace:
-                            parent.left = self.generator.generate_random()
-                        else:
-                            parent.right = self.generator.generate_random()
-                    elif isinstance(parent, UnaryOperator):
-                        parent.operand = self.generator.generate_random()
-        
-        elif mutation_type == 'change_constant':
-            # Изменить случайную константу (тонкая настройка)
-            constants = [n for n in self.collect_all_nodes(new_expr) if isinstance(n, Constant)]
-            if constants:
-                const = random.choice(constants)
-                # Гауссовская мутация с уменьшающимся шагом
-                const.value += random.gauss(0, 0.5)
-        
-        elif mutation_type == 'add_operator':
-            # Добавить оператор вокруг случайного узла
-            nodes = self.collect_all_nodes(new_expr)
-            if nodes and len(nodes) < 50:  # Ограничить размер
-                node = random.choice(nodes)
-                op_func, op_symbol = random.choice(self.generator.unary_ops)
-                new_unary = UnaryOperator(node.copy(), op_func, op_symbol)
-                # Нужно заменить node в родителе на new_unary
-                parent = self.find_parent(new_expr, node)
-                if parent:
-                    if isinstance(parent, BinaryOperator):
-                        if parent.left is node:
-                            parent.left = new_unary
-                        else:
-                            parent.right = new_unary
-                    elif isinstance(parent, UnaryOperator):
-                        parent.operand = new_unary
-                else:
-                    new_expr = new_unary
-        
-        elif mutation_type == 'simplify':
-            # Упростить выражение, удалив сложные части
-            nodes = self.collect_all_nodes(new_expr)
-            if len(nodes) > 20:
-                # Удалить случайную ветку, заменив её на константу или переменную
-                deep_nodes = [n for n in nodes if n.depth() > 3]
-                if deep_nodes:
-                    node_to_simplify = random.choice(deep_nodes)
-                    parent = self.find_parent(new_expr, node_to_simplify)
+        for tree_idx in trees_to_mutate:
+            tree = new_trees[tree_idx]
+            
+            # Типы мутаций с разными вероятностями
+            mutation_type = random.choices(
+                ['replace_subtree', 'change_constant', 'add_operator', 'simplify'],
+                weights=[0.4, 0.3, 0.2, 0.1]
+            )[0]
+            
+            if mutation_type == 'replace_subtree':
+                # Заменить случайное поддерево на новое случайное выражение
+                nodes = self.collect_all_nodes(tree)
+                if len(nodes) > 1:
+                    node_to_replace = random.choice(nodes[1:])  # Не корень
+                    parent = self.find_parent(tree, node_to_replace)
+                    
                     if parent:
-                        replacement = Variable() if random.random() < 0.5 else Constant(random.uniform(-5, 5))
                         if isinstance(parent, BinaryOperator):
-                            if parent.left is node_to_simplify:
-                                parent.left = replacement
+                            if parent.left is node_to_replace:
+                                parent.left = self.generator.generate_random()
                             else:
-                                parent.right = replacement
+                                parent.right = self.generator.generate_random()
                         elif isinstance(parent, UnaryOperator):
-                            parent.operand = replacement
+                            parent.operand = self.generator.generate_random()
+            
+            elif mutation_type == 'change_constant':
+                # Изменить случайную константу (тонкая настройка)
+                constants = [n for n in self.collect_all_nodes(tree) if isinstance(n, Constant)]
+                if constants:
+                    const = random.choice(constants)
+                    # Гауссовская мутация с уменьшающимся шагом
+                    const.value += random.gauss(0, 0.5)
+            
+            elif mutation_type == 'add_operator':
+                # Добавить оператор вокруг случайного узла
+                nodes = self.collect_all_nodes(tree)
+                if nodes and len(nodes) < 50:  # Ограничить размер
+                    node = random.choice(nodes)
+                    op_func, op_symbol = random.choice(self.generator.unary_ops)
+                    new_unary = UnaryOperator(node.copy(), op_func, op_symbol)
+                    # Нужно заменить node в родителе на new_unary
+                    parent = self.find_parent(tree, node)
+                    if parent:
+                        if isinstance(parent, BinaryOperator):
+                            if parent.left is node:
+                                parent.left = new_unary
+                            else:
+                                parent.right = new_unary
+                        elif isinstance(parent, UnaryOperator):
+                            parent.operand = new_unary
+                    else:
+                        new_trees[tree_idx] = new_unary
+            
+            elif mutation_type == 'simplify':
+                # Упростить выражение, удалив сложные части
+                nodes = self.collect_all_nodes(tree)
+                if len(nodes) > 20:
+                    # Удалить случайную ветку, заменив её на константу или переменную
+                    deep_nodes = [n for n in nodes if n.depth() > 3]
+                    if deep_nodes:
+                        node_to_simplify = random.choice(deep_nodes)
+                        parent = self.find_parent(tree, node_to_simplify)
+                        if parent:
+                            replacement = Variable() if random.random() < 0.5 else Constant(random.uniform(-5, 5))
+                            if isinstance(parent, BinaryOperator):
+                                if parent.left is node_to_simplify:
+                                    parent.left = replacement
+                                else:
+                                    parent.right = replacement
+                            elif isinstance(parent, UnaryOperator):
+                                parent.operand = replacement
         
         # Проверка на слишком большое выражение
-        if new_expr.depth() > 15:
-            # Вернуться к оригиналу или упростить
-            return individual
+        for tree in new_trees:
+            if tree.depth() > 15:
+                # Вернуться к оригиналу или упростить
+                return individual
         
-        return Individual(new_expr)
+        return Individual(new_trees if self.output_dim > 1 else new_trees[0])
     
     def find_parent(self, root: Node, target: Node) -> Optional[Node]:
         """Найти родителя узла"""
@@ -517,12 +606,12 @@ class GeneticAlgorithm:
         
         return None
     
-    def evolve(self, target_function: Callable[[List[float]], float],
+    def evolve(self, target_function: Callable[[List[float]], List[float]],
                test_points: List[List[float]],
                verbose: bool = True) -> Tuple[Optional[Individual], dict]:
         """Запустить эволюцию.
         
-        target_function - функция, принимающая вектор и возвращающая скаляр
+        target_function - функция, принимающая вектор и возвращающая вектор выходов размерности output_dim
         test_points - список входных векторов (каждый вектор размерности input_dim)
         """
         
@@ -701,8 +790,11 @@ class GeneticAlgorithm:
         new_count = self.population_size - elite_count
         for i in range(elite_count, self.population_size):
             self.generator.reset_counter()
-            expr = self.generator.generate_random()
-            self.population[i] = Individual(expr)
+            trees = []
+            for _ in range(self.output_dim):
+                expr = self.generator.generate_random()
+                trees.append(expr)
+            self.population[i] = Individual(trees if self.output_dim > 1 else trees[0])
         
         # Восстановить элиту
         for i in range(elite_count):
@@ -714,38 +806,52 @@ class GeneticAlgorithm:
 class ApproximatorTester:
     """Класс для тестирования аппроксиматора"""
     
-    def __init__(self, input_dim: int = 1):
+    def __init__(self, input_dim: int = 1, output_dim: int = 1):
         self.input_dim = input_dim
-        # Функции теперь принимают вектор [x] вместо скаляра x
+        self.output_dim = output_dim
+        # Функции теперь принимают вектор [x] вместо скаляра x и возвращают список выходов
         self.test_functions = {
-            "Линейная": lambda x: 2 * x[0] + 3,
-            "Квадратичная": lambda x: x[0] ** 2,
-            "Синус": lambda x: math.sin(x),
-            "Косинус": lambda x: math.cos(x),
-            "Экспонента": lambda x: math.exp(x / 5),
-            "Комбинированная": lambda x: math.sin(x) + 0.5 * x ** 2,
-            "Сложная": lambda x: math.sin(x) * math.cos(x) + 0.1 * x ** 3,
+            "Линейная": lambda x: [2 * x[0] + 3],
+            "Квадратичная": lambda x: [x[0] ** 2],
+            "Синус": lambda x: [math.sin(x[0])],
+            "Косинус": lambda x: [math.cos(x[0])],
+            "Экспонента": lambda x: [math.exp(x[0] / 5)],
+            "Комбинированная": lambda x: [math.sin(x[0]) + 0.5 * x[0] ** 2],
+            "Сложная": lambda x: [math.sin(x[0]) * math.cos(x[0]) + 0.1 * x[0] ** 3],
+        }
+        
+        # Многомерные тестовые функции (для output_dim > 1)
+        self.multidim_test_functions = {
+            "2D_линейная_квадрат": lambda x: [2 * x[0] + 3, x[0] ** 2],
+            "2D_синус_косинус": lambda x: [math.sin(x[0]), math.cos(x[0])],
+            "3D_вектор": lambda x: [x[0], x[0] ** 2, math.sin(x[0])],
         }
         
         # Словесные описания и формулы встроенных функций
         self.function_descriptions = {
-            "Линейная": "f(x) = 2x + 3",
-            "Квадратичная": "f(x) = x²",
-            "Синус": "f(x) = sin(x)",
-            "Косинус": "f(x) = cos(x)",
-            "Экспонента": "f(x) = e^(x/5)",
-            "Комбинированная": "f(x) = sin(x) + 0.5x²",
-            "Сложная": "f(x) = sin(x)·cos(x) + 0.1x³",
+            "Линейная": "f(x) = [2x + 3]",
+            "Квадратичная": "f(x) = [x²]",
+            "Синус": "f(x) = [sin(x)]",
+            "Косинус": "f(x) = [cos(x)]",
+            "Экспонента": "f(x) = [e^(x/5)]",
+            "Комбинированная": "f(x) = [sin(x) + 0.5x²]",
+            "Сложная": "f(x) = [sin(x)·cos(x) + 0.1x³]",
+        }
+        
+        self.multidim_function_descriptions = {
+            "2D_линейная_квадрат": "f(x) = [2x + 3, x²]",
+            "2D_синус_косинус": "f(x) = [sin(x), cos(x)]",
+            "3D_вектор": "f(x) = [x, x², sin(x)]",
         }
         
         self.test_ranges = {
-            "default": [i * 0.1 for i in range(-30, 31)],
-            "wide": [i * 0.2 for i in range(-50, 51)],
-            "narrow": [i * 0.05 for i in range(-20, 21)],
+            "default": [[i * 0.1] for i in range(-30, 31)],
+            "wide": [[i * 0.2] for i in range(-50, 51)],
+            "narrow": [[i * 0.05] for i in range(-20, 21)],
         }
     
-    def run_test(self, func_name: str, func: Callable[[float], float],
-                test_points: List[float], ga: GeneticAlgorithm) -> Tuple[Individual, dict]:
+    def run_test(self, func_name: str, func: Callable[[List[float]], List[float]],
+                test_points: List[List[float]], ga: GeneticAlgorithm) -> Tuple[Individual, dict]:
         """Запустить тест для одной функции"""
         
         print(f"\n{'='*60}")
@@ -759,31 +865,43 @@ class ApproximatorTester:
         end_time = time.time()
         
         # Оценка качества на отдельных тестовых точках
-        validation_points = [i * 0.15 for i in range(-25, 26)]
+        validation_points = [[i * 0.15] for i in range(-25, 26)]
         validation_errors = []
         
-        for x in validation_points:
-            predicted = best_individual.expression.evaluate(x)
-            actual = func(x)
-            error = abs(predicted - actual)
+        for x_vec in validation_points:
+            predicted = [best_individual.expressions[i].evaluate(x_vec) for i in range(ga.output_dim)]
+            actual = func(x_vec)
+            error = sum(abs(predicted[i] - actual[i]) for i in range(ga.output_dim))
             validation_errors.append(error)
         
         avg_validation_error = sum(validation_errors) / len(validation_errors)
         max_validation_error = max(validation_errors)
         
+        # Формирование выражений для каждой компоненты
+        expressions = {}
+        for i in range(ga.output_dim):
+            expressions[f'component_{i}'] = best_individual.expressions[i].to_string()
+        
         results = {
             "function_name": func_name,
+            "output_dim": ga.output_dim,
             "training_fitness": best_individual.fitness,
             "validation_avg_error": avg_validation_error,
             "validation_max_error": max_validation_error,
             "evolution_time": evolution_info['elapsed_time'],
-            "expression": best_individual.expression.to_string(),
+            "expressions": expressions,
             "generations": evolution_info['generations'],
             "evolution_info": evolution_info
         }
         
         print(f"\nРезультаты:")
-        print(f"  Выражение: {results['expression']}")
+        if ga.output_dim == 1:
+            print(f"  Выражение: {results['expressions']['component_0']}")
+        else:
+            print(f"  Найдено выражений: {ga.output_dim}")
+            for i in range(ga.output_dim):
+                print(f"  Компонента {i}: {results['expressions'][f'component_{i}']}")
+        
         print(f"  Ошибка на обучении (MSE): {results['training_fitness']:.6f}")
         print(f"  Средняя ошибка на валидации: {results['validation_avg_error']:.6f}")
         print(f"  Максимальная ошибка на валидации: {results['validation_max_error']:.6f}")
@@ -792,26 +910,43 @@ class ApproximatorTester:
         
         # Пример предсказаний
         print(f"\nПримеры предсказаний:")
-        sample_points = [-2.0, -1.0, 0.0, 1.0, 2.0]
-        for x in sample_points:
-            predicted = best_individual.expression.evaluate(x)
-            actual = func(x)
-            error = abs(predicted - actual)
-            print(f"  x={x:4.1f}: предсказано={predicted:8.4f}, фактически={actual:8.4f}, ошибка={error:.4f}")
+        sample_points = [[-2.0], [-1.0], [0.0], [1.0], [2.0]]
+        for x_vec in sample_points:
+            predicted = [best_individual.expressions[i].evaluate(x_vec) for i in range(ga.output_dim)]
+            actual = func(x_vec)
+            errors = [abs(predicted[i] - actual[i]) for i in range(ga.output_dim)]
+            
+            if ga.output_dim == 1:
+                print(f"  x={x_vec[0]:4.1f}: предсказано={predicted[0]:8.4f}, фактически={actual[0]:8.4f}, ошибка={errors[0]:.4f}")
+            else:
+                pred_str = ", ".join([f"{p:.4f}" for p in predicted])
+                act_str = ", ".join([f"{a:.4f}" for a in actual])
+                err_str = ", ".join([f"{e:.4f}" for e in errors])
+                print(f"  x={x_vec[0]:4.1f}: предсказано=[{pred_str}], фактически=[{act_str}], ошибки=[{err_str}]")
         
         return best_individual, results
     
-    def run_all_tests(self) -> List[dict]:
+    def run_all_tests(self, output_dim: int = 1) -> List[dict]:
         """Запустить все тесты"""
         
         print("\n" + "="*60)
         print("ЭВОЛЮЦИОНИРУЮЩИЙ УНИВЕРСАЛЬНЫЙ АППРОКСИМАТОР")
+        print(f"Размерность выхода: {output_dim}")
         print("="*60)
         print("\nЗапуск полного тестирования...\n")
         
         all_results = []
         
-        for func_name, func in self.test_functions.items():
+        # Выбрать набор функций в зависимости от размерности выхода
+        if output_dim == 1:
+            test_functions = self.test_functions
+            func_descriptions = self.function_descriptions
+        else:
+            # Для многомерного выхода использовать многомерные функции
+            test_functions = self.multidim_test_functions
+            func_descriptions = self.multidim_function_descriptions
+        
+        for func_name, func in test_functions.items():
             # Создать новый ГА для каждого теста с оптимизированными параметрами
             ga = GeneticAlgorithm(
                 population_size=150,
@@ -820,7 +955,9 @@ class ApproximatorTester:
                 elitism_count=10,
                 max_generations=600,
                 target_fitness=0.05,
-                max_depth=8
+                max_depth=8,
+                input_dim=self.input_dim,
+                output_dim=output_dim
             )
             
             _, results = self.run_test(func_name, func, self.test_ranges["default"], ga)
