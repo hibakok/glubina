@@ -475,119 +475,172 @@ class GeneticAlgorithm:
     
     def evolve(self, target_function: Callable[[float], float],
                test_points: List[float],
-               verbose: bool = True) -> Tuple[Individual, dict]:
+               verbose: bool = True) -> Tuple[Optional[Individual], dict]:
         """Запустить эволюцию"""
         
-        self.initialize_population()
-        
-        # Оценить начальную популяцию
-        for individual in self.population:
-            self.evaluate_fitness(individual, target_function, test_points)
-        
-        best_ever = min(self.population, key=lambda ind: ind.fitness)
-        
-        if verbose:
-            print(f"Начальная лучшая приспособленность: {best_ever.fitness:.6f}")
-        
-        start_time = time.time()
-        generation = 0
-        no_improvement_count = 0
-        max_no_improvement = 150  # Максимальное количество поколений без улучшения
-        
-        while generation < self.max_generations:
-            # Сортировать по приспособленности
-            self.population.sort(key=lambda ind: ind.fitness)
+        try:
+            self.initialize_population()
             
-            best_current = self.population[0]
-            avg_fitness = sum(ind.fitness for ind in self.population) / len(self.population)
-            
-            self.best_fitness_history.append(best_current.fitness)
-            self.avg_fitness_history.append(avg_fitness)
-            
-            if best_current.fitness < best_ever.fitness - 1e-10:
-                best_ever = best_current.copy()
-                no_improvement_count = 0
-            else:
-                no_improvement_count += 1
-            
-            # Проверка критерия остановки - целевая приспособленность
-            if best_current.fitness < self.target_fitness:
-                elapsed = time.time() - start_time
-                if verbose:
-                    # Очистить строку прогресса и вывести финальное сообщение
-                    print("\r" + " " * 100 + "\r", end="")
-                    print(f"\n🎯 ДОСТИГНУТА ЦЕЛЕВАЯ ПРИСПОСОБЛЕННОСТЬ на поколении {generation}!")
-                    print(f"   Лучшая ошибка: {best_current.fitness:.6f}")
-                    print(f"   Время: {elapsed:.1f}с")
-                break
-            
-            # Обновление прогресса в реальном времени (каждое поколение)
-            if verbose:
-                elapsed = time.time() - start_time
-                progress_line = f"\rПоколение {generation}/{self.max_generations} | Лучшая ошибка: {best_current.fitness:.6f} | Средняя: {avg_fitness:.6f} | Время: {elapsed:.1f}с"
-                print(progress_line, end="", flush=True)
-                
-                # Раз в 50 поколений выводить сводку новой строкой
-                if generation > 0 and generation % 50 == 0:
-                    print(f"\n📊 Сводка на поколении {generation}: лучшая={best_current.fitness:.6f}, средняя={avg_fitness:.6f}, время={elapsed:.1f}с")
-            
-            # Проверка на застой
-            if no_improvement_count >= max_no_improvement:
-                if verbose:
-                    print(f"\n⚠️ Застой обнаружен на поколении {generation}, перезапуск...")
-                # Частичный перезапуск популяции
-                self._partial_restart()
-                no_improvement_count = 0
-            
-            # Создание нового поколения
-            new_population = []
-            
-            # Элитизм
-            for i in range(self.elitism_count):
-                new_population.append(self.population[i].copy())
-            
-            # Заполнение остальной части популяции
-            while len(new_population) < self.population_size:
-                parent1 = self.select_tournament()
-                parent2 = self.select_tournament()
-                
-                child1, child2 = self.crossover(parent1, parent2)
-                
-                child1 = self.mutate(child1)
-                child2 = self.mutate(child2)
-                
-                new_population.append(child1)
-                if len(new_population) < self.population_size:
-                    new_population.append(child2)
-            
-            # Оценить новую популяцию
-            for individual in new_population:
+            # Оценить начальную популяцию
+            for individual in self.population:
                 self.evaluate_fitness(individual, target_function, test_points)
             
-            self.population = new_population
-            generation += 1
+            best_ever = min(self.population, key=lambda ind: ind.fitness)
+            
+            if verbose:
+                print(f"Начальная лучшая приспособленность: {best_ever.fitness:.6f}")
+            
+            start_time = time.time()
+            generation = 0
+            no_improvement_count = 0
+            max_no_improvement = 150  # Максимальное количество поколений без улучшения
+            
+            while generation < self.max_generations:
+                # Сортировать по приспособленности
+                self.population.sort(key=lambda ind: ind.fitness)
+                
+                best_current = self.population[0]
+                avg_fitness = sum(ind.fitness for ind in self.population) / len(self.population)
+                
+                self.best_fitness_history.append(best_current.fitness)
+                self.avg_fitness_history.append(avg_fitness)
+                
+                if best_current.fitness < best_ever.fitness - 1e-10:
+                    best_ever = best_current.copy()
+                    no_improvement_count = 0
+                else:
+                    no_improvement_count += 1
+                
+                # Проверка критерия остановки - целевая приспособленность
+                if best_current.fitness < self.target_fitness:
+                    elapsed = time.time() - start_time
+                    if verbose:
+                        # Очистить строку прогресса и вывести финальное сообщение
+                        print("\r" + " " * 100 + "\r", end="")
+                        print(f"\n🎯 ДОСТИГНУТА ЦЕЛЕВАЯ ПРИСПОСОБЛЕННОСТЬ на поколении {generation}!")
+                        print(f"   Лучшая ошибка: {best_current.fitness:.6f}")
+                        print(f"   Время: {elapsed:.1f}с")
+                    break
+                
+                # Обновление прогресса в реальном времени (каждое поколение)
+                if verbose:
+                    elapsed = time.time() - start_time
+                    progress_line = f"\rПоколение {generation}/{self.max_generations} | Лучшая ошибка: {best_current.fitness:.6f} | Средняя: {avg_fitness:.6f} | Время: {elapsed:.1f}с"
+                    print(progress_line, end="", flush=True)
+                    
+                    # Раз в 50 поколений выводить сводку новой строкой
+                    if generation > 0 and generation % 50 == 0:
+                        print(f"\n📊 Сводка на поколении {generation}: лучшая={best_current.fitness:.6f}, средняя={avg_fitness:.6f}, время={elapsed:.1f}с")
+                
+                # Проверка на застой
+                if no_improvement_count >= max_no_improvement:
+                    if verbose:
+                        print(f"\n⚠️ Застой обнаружен на поколении {generation}, перезапуск...")
+                    # Частичный перезапуск популяции
+                    self._partial_restart()
+                    no_improvement_count = 0
+                
+                # Создание нового поколения
+                new_population = []
+                
+                # Элитизм
+                for i in range(self.elitism_count):
+                    new_population.append(self.population[i].copy())
+                
+                # Заполнение остальной части популяции
+                while len(new_population) < self.population_size:
+                    parent1 = self.select_tournament()
+                    parent2 = self.select_tournament()
+                    
+                    child1, child2 = self.crossover(parent1, parent2)
+                    
+                    child1 = self.mutate(child1)
+                    child2 = self.mutate(child2)
+                    
+                    new_population.append(child1)
+                    if len(new_population) < self.population_size:
+                        new_population.append(child2)
+                
+                # Оценить новую популяцию
+                for individual in new_population:
+                    self.evaluate_fitness(individual, target_function, test_points)
+                
+                self.population = new_population
+                generation += 1
+            
+            elapsed_time = time.time() - start_time
+            
+            # Если цикл завершился без достижения целевой приспособленности
+            if best_ever.fitness >= self.target_fitness and verbose:
+                print("\r" + " " * 100 + "\r", end="")
+                print(f"\n🏁 Эволюция завершена после {generation} поколений")
+                print(f"   Лучшая ошибка: {best_ever.fitness:.6f}")
+                print(f"   Время: {elapsed_time:.1f}с")
+            
+            # Создать словарь с информацией об эволюции
+            evolution_info = {
+                'generations': generation,
+                'elapsed_time': elapsed_time,
+                'final_fitness': best_ever.fitness,
+                'population_size': self.population_size,
+                'mutation_rate': self.mutation_rate,
+                'crossover_rate': self.crossover_rate,
+                'max_depth': self.generator.max_depth,
+                'interrupted': False,
+                'converged': best_ever.fitness < self.target_fitness
+            }
+            
+            return best_ever, evolution_info
+            
+        except KeyboardInterrupt:
+            # Обработка прерывания Ctrl+C во время эволюции
+            elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
+            
+            if verbose:
+                print("\n\n⚠️  ЭВОЛЮЦИЯ ПРЕРВАНА ПОЛЬЗОВАТЕЛЕМ (Ctrl+C)")
+                if 'best_ever' in locals():
+                    print(f"\n📊 ТЕКУЩИЙ ЛУЧШИЙ РЕЗУЛЬТАТ НА МОМЕНТ ПРЕРЫВАНИЯ:")
+                    print(f"   Поколение: {generation}")
+                    print(f"   Лучшая ошибка: {best_ever.fitness:.6f}")
+                    print(f"   Выражение: {best_ever.expression.to_string()}")
+                    print(f"   Прошло времени: {elapsed_time:.1f}с")
+                else:
+                    print("Эволюция прервана до получения первых результатов.")
+            
+            evolution_info = {
+                'generations': generation if 'generation' in locals() else 0,
+                'elapsed_time': elapsed_time,
+                'final_fitness': best_ever.fitness if 'best_ever' in locals() else float('inf'),
+                'population_size': self.population_size,
+                'mutation_rate': self.mutation_rate,
+                'crossover_rate': self.crossover_rate,
+                'max_depth': self.generator.max_depth,
+                'interrupted': True,
+                'converged': False
+            }
+            
+            return best_ever if 'best_ever' in locals() else None, evolution_info
         
-        elapsed_time = time.time() - start_time
-        
-        # Если цикл завершился без достижения целевой приспособленности
-        if best_ever.fitness >= self.target_fitness and verbose:
-            print("\r" + " " * 100 + "\r", end="")
-            print(f"\n🏁 Эволюция завершена после {generation} поколений")
-            print(f"   Лучшая ошибка: {best_ever.fitness:.6f}")
-            print(f"   Время: {elapsed_time:.1f}с")
-        
-        # Создать словарь с информацией об эволюции
-        evolution_info = {
-            'generations': generation,
-            'elapsed_time': elapsed_time,
-            'final_fitness': best_ever.fitness,
-            'population_size': self.population_size,
-            'mutation_rate': self.mutation_rate,
-            'crossover_rate': self.crossover_rate,
-            'max_depth': self.generator.max_depth
-        }
-        
-        return best_ever, evolution_info
+        except Exception as e:
+            # Обработка любых других исключений
+            if verbose:
+                print(f"\n⚠️  ПРОИЗОШЛА ОШИБКА ВО ВРЕМЯ ЭВОЛЮЦИИ: {e}")
+                print("Эволюция прервана. Возврат в меню.")
+            
+            evolution_info = {
+                'generations': generation if 'generation' in locals() else 0,
+                'elapsed_time': 0,
+                'final_fitness': float('inf'),
+                'population_size': self.population_size,
+                'mutation_rate': self.mutation_rate,
+                'crossover_rate': self.crossover_rate,
+                'max_depth': self.generator.max_depth,
+                'interrupted': True,
+                'converged': False,
+                'error': str(e)
+            }
+            
+            return None, evolution_info
     
     def _partial_restart(self):
         """Частичный перезапуск популяции для выхода из локального оптимума"""
@@ -805,6 +858,7 @@ class EvolutionaryApproximatorApp:
         x_values = []
         y_values = []
         skipped_lines = 0
+        invalid_line_examples = []
         
         try:
             with open(filename, 'r', encoding='utf-8') as f:
@@ -860,12 +914,19 @@ class EvolutionaryApproximatorApp:
                     # Если ни один способ не сработал — пропустить строку
                     if not parsed:
                         skipped_lines += 1
+                        if len(invalid_line_examples) < 3:
+                            invalid_line_examples.append((line_num, line[:50]))
                 
                 # Проверка результата
-                if len(x_values) < 2:
-                    print(f"Ошибка: файл не содержит валидных данных (найдено только {len(x_values)} пар).")
+                if len(x_values) < 3:
+                    print(f"Ошибка: данных недостаточно для аппроксимации (найдено только {len(x_values)} пар).")
+                    print("Требуется минимум 3 пары чисел для построения аппроксимации.")
                     if skipped_lines > 0:
-                        print(f"Пропущено строк: {skipped_lines} (возможно, это заголовки или неверный формат)")
+                        print(f"Пропущено строк: {skipped_lines}")
+                        if invalid_line_examples:
+                            print("Примеры проблемных строк:")
+                            for ln, example in invalid_line_examples:
+                                print(f"  Строка {ln}: '{example}...'")
                     return None, None
                 
                 # Показать сводку
@@ -879,7 +940,11 @@ class EvolutionaryApproximatorApp:
                 print(f"Диапазон X: [{x_min:.6f}, {x_max:.6f}]")
                 print(f"Диапазон Y: [{y_min:.6f}, {y_max:.6f}]")
                 if skipped_lines > 0:
-                    print(f"Пропущено строк: {skipped_lines}")
+                    print(f"⚠️  Пропущено строк: {skipped_lines} (содержат мусор, буквы вместо чисел или неверный формат)")
+                    if invalid_line_examples:
+                        print("Примеры проблемных строк:")
+                        for ln, example in invalid_line_examples:
+                            print(f"  Строка {ln}: '{example}...'")
                 print('=' * 50)
                 
                 return x_values, y_values
@@ -895,6 +960,8 @@ class EvolutionaryApproximatorApp:
             print(f"Ошибка: файл '{filename}' имеет неверную кодировку (ожидалась UTF-8).")
             return None, None
         except Exception as e:
+            print(f"Ошибка при чтении файла: {e}")
+            return None, None
             print(f"Ошибка при чтении файла: {e}")
             return None, None
     
@@ -943,71 +1010,83 @@ class EvolutionaryApproximatorApp:
         print("ЗАПУСК ЭВОЛЮЦИИ НА ЗАГРУЖЕННЫХ ДАННЫХ")
         print("=" * 50)
         
-        # Создать целевую функцию из данных
-        target_func = self.create_target_function_from_data(x_values, y_values)
-        
-        # Использовать x_values как тестовые точки
-        test_points = x_values
-        
-        # Инициализировать ГА
-        self.ga = GeneticAlgorithm(**self.default_ga_params)
-        
-        print(f"\nПараметры эволюции:")
-        print(f"  Размер популяции: {self.default_ga_params['population_size']}")
-        print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
-        print(f"  Точек данных: {len(test_points)}")
-        print()
-        
-        # Запустить эволюцию
-        self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
-        
-        # Сохранить результаты с полной информацией
-        if self.best_individual:
-            # Вычислить ошибки на валидационных точках (отдельный набор)
-            validation_points = [x_values[0] + (x_values[-1] - x_values[0]) * i / 10 for i in range(11)]
-            validation_errors = []
-            for x in validation_points:
-                predicted = self.best_individual.expression.evaluate(x)
-                actual = target_func(x)
-                error = abs(predicted - actual)
-                validation_errors.append(error)
+        try:
+            # Создать целевую функцию из данных
+            target_func = self.create_target_function_from_data(x_values, y_values)
             
-            avg_val_error = sum(validation_errors) / len(validation_errors) if validation_errors else 0
-            max_val_error = max(validation_errors) if validation_errors else 0
+            # Использовать x_values как тестовые точки
+            test_points = x_values
             
-            self.last_results = {
-                'type': 'data',
-                'expression': self.best_individual.expression.to_string(),
-                'fitness': self.best_individual.fitness,
-                'validation_avg_error': avg_val_error,
-                'validation_max_error': max_val_error,
-                'data_points': len(x_values),
-                'generations': self.evolution_info['generations'],
-                'elapsed_time': self.evolution_info['elapsed_time'],
-                'evolution_info': self.evolution_info,
-                'x_values': x_values,
-                'y_values': y_values,
-                'target_func': target_func
-            }
+            # Инициализировать ГА
+            self.ga = GeneticAlgorithm(**self.default_ga_params)
             
-            print("\n" + "-" * 50)
-            print("РЕЗУЛЬТАТ:")
-            print(f"  Выражение: {self.last_results['expression']}")
-            print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
-            print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
-            print(f"  Поколений: {self.last_results['generations']}")
-            print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
+            print(f"\nПараметры эволюции:")
+            print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+            print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+            print(f"  Точек данных: {len(test_points)}")
+            print()
             
-            # Примеры предсказаний на данных
-            print("\nПримеры предсказаний на данных:")
-            sample_indices = [0, len(x_values)//2, len(x_values)-1]
-            for i in sample_indices:
-                if i < len(x_values):
-                    x = x_values[i]
-                    actual = y_values[i]
+            # Запустить эволюцию
+            self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
+            
+            # Проверка на прерывание
+            if self.evolution_info.get('interrupted', False):
+                print("\nЭволюция была прервана. Возврат в меню.")
+                return
+            
+            # Сохранить результаты с полной информацией
+            if self.best_individual:
+                # Вычислить ошибки на валидационных точках (отдельный набор)
+                validation_points = [x_values[0] + (x_values[-1] - x_values[0]) * i / 10 for i in range(11)]
+                validation_errors = []
+                for x in validation_points:
                     predicted = self.best_individual.expression.evaluate(x)
+                    actual = target_func(x)
                     error = abs(predicted - actual)
-                    print(f"  x={x:.4f}: предсказано={predicted:.4f}, фактически={actual:.4f}, ошибка={error:.4f}")
+                    validation_errors.append(error)
+                
+                avg_val_error = sum(validation_errors) / len(validation_errors) if validation_errors else 0
+                max_val_error = max(validation_errors) if validation_errors else 0
+                
+                self.last_results = {
+                    'type': 'data',
+                    'expression': self.best_individual.expression.to_string(),
+                    'fitness': self.best_individual.fitness,
+                    'validation_avg_error': avg_val_error,
+                    'validation_max_error': max_val_error,
+                    'data_points': len(x_values),
+                    'generations': self.evolution_info['generations'],
+                    'elapsed_time': self.evolution_info['elapsed_time'],
+                    'evolution_info': self.evolution_info,
+                    'x_values': x_values,
+                    'y_values': y_values,
+                    'target_func': target_func
+                }
+                
+                print("\n" + "-" * 50)
+                print("РЕЗУЛЬТАТ:")
+                print(f"  Выражение: {self.last_results['expression']}")
+                print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
+                print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
+                print(f"  Поколений: {self.last_results['generations']}")
+                print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
+                
+                # Примеры предсказаний на данных
+                print("\nПримеры предсказаний на данных:")
+                sample_indices = [0, len(x_values)//2, len(x_values)-1]
+                for i in sample_indices:
+                    if i < len(x_values):
+                        x = x_values[i]
+                        actual = y_values[i]
+                        predicted = self.best_individual.expression.evaluate(x)
+                        error = abs(predicted - actual)
+                        print(f"  x={x:.4f}: предсказано={predicted:.4f}, фактически={actual:.4f}, ошибка={error:.4f}")
+            else:
+                print("\n⚠️  Эволюция не смогла найти подходящее выражение.")
+        
+        except Exception as e:
+            print(f"\n⚠️  ПРОИЗОШЛА ОШИБКА ПРИ ЗАПУСКЕ ЭВОЛЮЦИИ НА ДАННЫХ: {e}")
+            print("Возврат в меню...")
     
     def select_builtin_function(self) -> Optional[Tuple[str, Callable[[float], float]]]:
         """Предложить пользователю выбрать встроенную функцию"""
@@ -1059,66 +1138,78 @@ class EvolutionaryApproximatorApp:
         print(f"ЗАПУСК ЭВОЛЮЦИИ НА ФУНКЦИИ: {func_name}")
         print("=" * 50)
         
-        # Инициализировать ГА
-        self.ga = GeneticAlgorithm(**self.default_ga_params)
+        try:
+            # Инициализировать ГА
+            self.ga = GeneticAlgorithm(**self.default_ga_params)
+            
+            # Использовать тестовые точки по умолчанию
+            test_points = self.tester.test_ranges["default"]
+            
+            print(f"\nПараметры эволюции:")
+            print(f"  Функция: {func_name}")
+            print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+            print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+            print(f"  Тестовых точек: {len(test_points)}")
+            print()
+            
+            # Запустить эволюцию
+            self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
+            
+            # Проверка на прерывание
+            if self.evolution_info.get('interrupted', False):
+                print("\nЭволюция была прервана. Возврат в меню.")
+                return
+            
+            # Сохранить результаты с полной информацией
+            if self.best_individual:
+                # Оценка на валидационных точках
+                validation_points = [i * 0.15 for i in range(-25, 26)]
+                validation_errors = []
+                
+                for x in validation_points:
+                    predicted = self.best_individual.expression.evaluate(x)
+                    actual = target_func(x)
+                    error = abs(predicted - actual)
+                    validation_errors.append(error)
+                
+                avg_val_error = sum(validation_errors) / len(validation_errors)
+                max_val_error = max(validation_errors)
+                
+                self.last_results = {
+                    'type': 'builtin',
+                    'function_name': func_name,
+                    'expression': self.best_individual.expression.to_string(),
+                    'fitness': self.best_individual.fitness,
+                    'validation_avg_error': avg_val_error,
+                    'validation_max_error': max_val_error,
+                    'generations': self.evolution_info['generations'],
+                    'elapsed_time': self.evolution_info['elapsed_time'],
+                    'evolution_info': self.evolution_info,
+                    'target_func': target_func
+                }
+                
+                print("\n" + "-" * 50)
+                print("РЕЗУЛЬТАТ:")
+                print(f"  Выражение: {self.last_results['expression']}")
+                print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
+                print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
+                print(f"  Поколений: {self.last_results['generations']}")
+                print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
+                
+                # Примеры предсказаний
+                print("\nПримеры предсказаний:")
+                sample_points = [-2.0, -1.0, 0.0, 1.0, 2.0]
+                for x in sample_points:
+                    predicted = self.best_individual.expression.evaluate(x)
+                    actual = target_func(x)
+                    error = abs(predicted - actual)
+                    print(f"  x={x:4.1f}: предсказано={predicted:8.4f}, фактически={actual:8.4f}, ошибка={error:.4f}")
+            else:
+                print("\n⚠️  Эволюция не смогла найти подходящее выражение.")
         
-        # Использовать тестовые точки по умолчанию
-        test_points = self.tester.test_ranges["default"]
-        
-        print(f"\nПараметры эволюции:")
-        print(f"  Функция: {func_name}")
-        print(f"  Размер популяции: {self.default_ga_params['population_size']}")
-        print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
-        print(f"  Тестовых точек: {len(test_points)}")
-        print()
-        
-        # Запустить эволюцию
-        self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
-        
-        # Сохранить результаты с полной информацией
-        if self.best_individual:
-            # Оценка на валидационных точках
-            validation_points = [i * 0.15 for i in range(-25, 26)]
-            validation_errors = []
-            
-            for x in validation_points:
-                predicted = self.best_individual.expression.evaluate(x)
-                actual = target_func(x)
-                error = abs(predicted - actual)
-                validation_errors.append(error)
-            
-            avg_val_error = sum(validation_errors) / len(validation_errors)
-            max_val_error = max(validation_errors)
-            
-            self.last_results = {
-                'type': 'builtin',
-                'function_name': func_name,
-                'expression': self.best_individual.expression.to_string(),
-                'fitness': self.best_individual.fitness,
-                'validation_avg_error': avg_val_error,
-                'validation_max_error': max_val_error,
-                'generations': self.evolution_info['generations'],
-                'elapsed_time': self.evolution_info['elapsed_time'],
-                'evolution_info': self.evolution_info,
-                'target_func': target_func
-            }
-            
-            print("\n" + "-" * 50)
-            print("РЕЗУЛЬТАТ:")
-            print(f"  Выражение: {self.last_results['expression']}")
-            print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
-            print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
-            print(f"  Поколений: {self.last_results['generations']}")
-            print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
-            
-            # Примеры предсказаний
-            print("\nПримеры предсказаний:")
-            sample_points = [-2.0, -1.0, 0.0, 1.0, 2.0]
-            for x in sample_points:
-                predicted = self.best_individual.expression.evaluate(x)
-                actual = target_func(x)
-                error = abs(predicted - actual)
-                print(f"  x={x:4.1f}: предсказано={predicted:8.4f}, фактически={actual:8.4f}, ошибка={error:.4f}")
+        except Exception as e:
+            print(f"\n⚠️  ПРОИЗОШЛА ОШИБКА ПРИ ЗАПУСКЕ ЭВОЛЮЦИИ НА ВСТРОЕННОЙ ФУНКЦИИ: {e}")
+            print("Возврат в меню...")
     
     def view_last_results(self) -> None:
         """Показать результаты последнего запуска"""
@@ -1306,33 +1397,59 @@ class EvolutionaryApproximatorApp:
         print("   ДОБРО ПОЖАЛОВАТЬ В ЭВОЛЮЦИОННЫЙ АППРОКСИМАТОР!")
         print("=" * 50)
         
-        while True:
-            self.display_menu()
-            choice = self.get_user_choice()
-            
-            if choice == 1:
-                x_values, y_values = self.load_data_from_file()
-                if x_values and y_values:
-                    self.run_evolution_on_data(x_values, y_values)
-            
-            elif choice == 2:
-                self.run_evolution_on_builtin()
-            
-            elif choice == 3:
-                self.view_last_results()
-            
-            elif choice == 4:
-                self.save_expression_to_file()
-            
-            elif choice == 5:
-                print("\n" + "=" * 50)
-                print("СПАСИБО ЗА ИСПОЛЬЗОВАНИЕ ПРОГРАММЫ!")
-                print("До свидания!")
-                print("=" * 50 + "\n")
-                break
-            
-            else:
-                print("\nНекорректный ввод. Пожалуйста, выберите пункт от 1 до 5.")
+        try:
+            while True:
+                try:
+                    self.display_menu()
+                    choice = self.get_user_choice()
+                    
+                    if choice == 1:
+                        x_values, y_values = self.load_data_from_file()
+                        if x_values and y_values:
+                            self.run_evolution_on_data(x_values, y_values)
+                    
+                    elif choice == 2:
+                        self.run_evolution_on_builtin()
+                    
+                    elif choice == 3:
+                        self.view_last_results()
+                    
+                    elif choice == 4:
+                        self.save_expression_to_file()
+                    
+                    elif choice == 5:
+                        print("\n" + "=" * 50)
+                        print("СПАСИБО ЗА ИСПОЛЬЗОВАНИЕ ПРОГРАММЫ!")
+                        print("До свидания!")
+                        print("=" * 50 + "\n")
+                        break
+                    
+                    else:
+                        print("\nНекорректный ввод. Пожалуйста, выберите пункт от 1 до 5.")
+                
+                except KeyboardInterrupt:
+                    # Обработка Ctrl+C в меню
+                    print("\n\n⚠️  Получено прерывание (Ctrl+C)")
+                    print("Вы действительно хотите выйти? (y/n): ", end="")
+                    try:
+                        confirm = input().strip().lower()
+                        if confirm in ('y', 'yes', 'д', 'да'):
+                            print("\n" + "=" * 50)
+                            print("СПАСИБО ЗА ИСПОЛЬЗОВАНИЕ ПРОГРАММЫ!")
+                            print("До свидания!")
+                            print("=" * 50 + "\n")
+                            break
+                        else:
+                            print("Возврат в меню...")
+                    except (KeyboardInterrupt, EOFError):
+                        print("\n\nВыход из программы...")
+                        print("=" * 50)
+                        print("До свидания!")
+                        print("=" * 50 + "\n")
+                        break
+        except Exception as e:
+            print(f"\n⚠️  ПРОИЗОШЛА НЕОЖИДАННАЯ ОШИБКА: {e}")
+            print("Программа вынуждена завершить работу. Приносим извинения.")
 
 
 def main():
