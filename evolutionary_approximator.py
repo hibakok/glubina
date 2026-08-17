@@ -820,6 +820,82 @@ class EvolutionaryApproximatorApp:
             'max_depth': 8
         }
     
+    def ask_evolution_params(self) -> None:
+        """Спросить пользователя о параметрах эволюции
+        
+        Если пользователь нажимает Enter или вводит Y — используются параметры по умолчанию.
+        Если вводит N — последовательно спрашиваем 3 ключевых параметра.
+        """
+        print("\n" + "=" * 50)
+        print("НАСТРОЙКИ ЭВОЛЮЦИИ")
+        print("=" * 50)
+        print(f"Параметры по умолчанию:")
+        print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+        print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+        print(f"  Максимальная глубина выражения: {self.default_ga_params['max_depth']}")
+        print()
+        
+        try:
+            choice = input("Использовать настройки по умолчанию? (Y/n): ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\n")
+            return
+        
+        # Если пользователь нажал Enter или ввел Y — используем настройки по умолчанию
+        if choice == '' or choice == 'y' or choice == 'yes' or choice == 'д' or choice == 'да':
+            print("\nИспользуются настройки по умолчанию.")
+            return
+        
+        # Если пользователь ввел N — спрашиваем параметры
+        if choice == 'n' or choice == 'no' or choice == 'н' or choice == 'нет':
+            print("\nВведите параметры (нажмите Enter для использования значения по умолчанию):")
+            
+            # Размер популяции
+            try:
+                pop_input = input(f"Размер популяции [{self.default_ga_params['population_size']}]: ").strip()
+                if pop_input:
+                    pop_size = int(pop_input)
+                    if pop_size > 0:
+                        self.default_ga_params['population_size'] = pop_size
+            except ValueError:
+                print(f"  Неверное значение, используется {self.default_ga_params['population_size']}")
+            except (KeyboardInterrupt, EOFError):
+                print("\n")
+            
+            # Максимум поколений
+            try:
+                gen_input = input(f"Максимум поколений [{self.default_ga_params['max_generations']}]: ").strip()
+                if gen_input:
+                    max_gen = int(gen_input)
+                    if max_gen > 0:
+                        self.default_ga_params['max_generations'] = max_gen
+            except ValueError:
+                print(f"  Неверное значение, используется {self.default_ga_params['max_generations']}")
+            except (KeyboardInterrupt, EOFError):
+                print("\n")
+            
+            # Максимальная глубина выражения
+            try:
+                depth_input = input(f"Максимальная глубина выражения [{self.default_ga_params['max_depth']}]: ").strip()
+                if depth_input:
+                    max_d = int(depth_input)
+                    if max_d > 0 and max_d <= 15:
+                        self.default_ga_params['max_depth'] = max_d
+                    elif max_d > 15:
+                        print(f"  Глубина ограничена 15, используется 15")
+                        self.default_ga_params['max_depth'] = 15
+            except ValueError:
+                print(f"  Неверное значение, используется {self.default_ga_params['max_depth']}")
+            except (KeyboardInterrupt, EOFError):
+                print("\n")
+            
+            print(f"\nПараметры установлены:")
+            print(f"  Размер популяции: {self.default_ga_params['population_size']}")
+            print(f"  Максимум поколений: {self.default_ga_params['max_generations']}")
+            print(f"  Максимальная глубина: {self.default_ga_params['max_depth']}")
+        else:
+            print("\nИспользуются настройки по умолчанию.")
+    
     def display_menu(self) -> None:
         """Отобразить главное меню"""
         print("\n" + "=" * 50)
@@ -1010,6 +1086,9 @@ class EvolutionaryApproximatorApp:
         print("ЗАПУСК ЭВОЛЮЦИИ НА ЗАГРУЖЕННЫХ ДАННЫХ")
         print("=" * 50)
         
+        # Спросить пользователя о параметрах эволюции
+        self.ask_evolution_params()
+        
         try:
             # Создать целевую функцию из данных
             target_func = self.create_target_function_from_data(x_values, y_values)
@@ -1137,6 +1216,9 @@ class EvolutionaryApproximatorApp:
         print("\n" + "=" * 50)
         print(f"ЗАПУСК ЭВОЛЮЦИИ НА ФУНКЦИИ: {func_name}")
         print("=" * 50)
+        
+        # Спросить пользователя о параметрах эволюции
+        self.ask_evolution_params()
         
         try:
             # Инициализировать ГА
