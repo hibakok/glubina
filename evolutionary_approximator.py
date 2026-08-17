@@ -12,6 +12,7 @@ from typing import List, Callable, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import time
+import copy
 
 
 # ==================== Структуры данных для многомерных случаев ====================
@@ -833,6 +834,289 @@ class GeneticAlgorithm:
         
         return nodes
     
+    def get_constants_from_tree(self, root: Node) -> List[Constant]:
+        """Собрать все константы из дерева в порядке обхода"""
+        constants = []
+        
+        if isinstance(root, Constant):
+            constants.append(root)
+        elif isinstance(root, BinaryOperator):
+            constants.extend(self.get_constants_from_tree(root.left))
+            constants.extend(self.get_constants_from_tree(root.right))
+        elif isinstance(root, UnaryOperator):
+            constants.extend(self.get_constants_from_tree(root.operand))
+        elif isinstance(root, ConditionalNode):
+            constants.extend(self.get_constants_from_tree(root.condition))
+            constants.extend(self.get_constants_from_tree(root.then_branch))
+            constants.extend(self.get_constants_from_tree(root.else_branch))
+        
+        return constants
+    
+    def set_constants_in_tree(self, root: Node, constants: List[float], index: int = 0) -> int:
+        """Записать значения констант обратно в дерево. Возвращает следующий индекс."""
+        if isinstance(root, Constant):
+            if index < len(constants):
+                root.value = constants[index]
+                return index + 1
+            return index
+        elif isinstance(root, BinaryOperator):
+            index = self.set_constants_in_tree(root.left, constants, index)
+            index = self.set_constants_in_tree(root.right, constants, index)
+            return index
+        elif isinstance(root, UnaryOperator):
+            index = self.set_constants_in_tree(root.operand, constants, index)
+            return index
+        elif isinstance(root, ConditionalNode):
+            index = self.set_constants_in_tree(root.condition, constants, index)
+            index = self.set_constants_in_tree(root.then_branch, constants, index)
+            index = self.set_constants_in_tree(root.else_branch, constants, index)
+            return index
+        return index
+    
+    def _compute_mse_for_constants(self, expression: Node, constants: List[float], 
+                                   target_function: Callable[[List[float]], List[float]],
+                                   test_points: List[List[float]]) -> float:
+        """Вычислить MSE для заданных значений констант"""
+        # Записать константы в дерево
+        self.set_constants_in_tree(expression, constants, 0)
+        
+        # Вычислить ошибку
+        total_squared_error = 0.0
+        num_points = len(test_points)
+        
+        if num_points == 0:
+            return float('inf')
+        
+        for x_vec in test_points:
+            try:
+                predicted = expression.evaluate(x_vec)
+                actual = target_function(x_vec)[0]  # Для первого выхода
+                diff = predicted - actual
+                diff = max(-1e6, min(1e6, diff))
+                total_squared_error += diff * diff
+            except:
+                return float('inf')
+        
+        return total_squared_error / num_points
+    
+    def optimize_constants_nelder_mead(self, individual: Individual,
+                                       target_function: Callable[[List[float]], List[float]],
+                                       test_points: List[List[float]],
+                                       max_iterations: int = 100,
+                                       tol: float = 1e-8) -> bool:
+        """Оптимизация констант методом Нелдера-Мида (simplex method).
+        
+        Возвращает True если оптимизация была выполнена успешно.
+        """
+        # Работаем только с первым деревом (для M=1)
+        expr = individual.expressions[0].copy()
+        
+        # Собрать начальные значения констант
+        constants_nodes = self.get_constants_from_tree(expr)
+        n_consts = len(constants_nodes)
+        
+        if n_consts == 0:
+            return False  # Нет констант для оптимизации
+        
+        if n_consts > 20:
+            return False  # Слишком много констант, метод будет медленным
+        
+        initial_constants = [c.value for c in constants_nodes]
+        
+        # Функция ошибки для оптимизации
+        def objective(consts):
+            return self._compute_mse_for_constants(expr, list(consts), target_function, test_points)
+        
+        # Инициализация симплекса
+        simplex = [initial_constants[:]]
+        for i in range(n_consts):
+            point = initial_constants[:]
+            # Шаг для каждой координаты
+            step = max(0.1, abs(point[i]) * 0.1)
+            point[i] += step
+            simplex.append(point)
+        
+        # Параметры метода Нелдера-Мида
+        alpha = 1.0  # отражение
+        gamma = 2.0  # растяжение
+        rho = 0.5    # сжатие
+        sigma = 0.5  # уменьшение
+        
+        best_fitness = objective(initial_constants)
+        
+        for iteration in range(max_iterations):
+            # Сортировка симплекса по значению функции
+            simplex.sort(key=objective)
+            
+            # Проверка сходимости
+            best_val = objective(simplex[0])
+            worst_val = objective(simplex[-1])
+            if abs(worst_val - best_val) < tol:
+                break
+            
+            # Центроид без худшей точки
+            centroid = [sum(simplex[i][j] for i in range(n_consts)) / n_consts 
+                       for j in range(n_consts)]
+            
+            # Отражение
+            xr = [centroid[j] + alpha * (centroid[j] - simplex[-1][j]) for j in range(n_consts)]
+            xr_fitness = objective(xr)
+            
+            if objective(simplex[0]) <= xr_fitness < objective(simplex[-2]):
+                simplex[-1] = xr
+                continue
+            
+            # Растяжение
+            if xr_fitness < objective(simplex[0]):
+                xe = [centroid[j] + gamma * (xr[j] - centroid[j]) for j in range(n_consts)]
+                xe_fitness = objective(xe)
+                if xe_fitness < xr_fitness:
+                    simplex[-1] = xe
+                else:
+                    simplex[-1] = xr
+                continue
+            
+            # Сжатие
+            xc = [centroid[j] + rho * (simplex[-1][j] - centroid[j]) for j in range(n_consts)]
+            xc_fitness = objective(xc)
+            
+            if xc_fitness < worst_val:
+                simplex[-1] = xc
+                continue
+            
+            # Уменьшение
+            for i in range(1, len(simplex)):
+                simplex[i] = [simplex[0][j] + sigma * (simplex[i][j] - simplex[0][j]) 
+                             for j in range(n_consts)]
+        
+        # Получить лучшее решение
+        simplex.sort(key=objective)
+        best_constants = simplex[0]
+        final_fitness = objective(best_constants)
+        
+        # Применить лучшие константы к особи
+        if final_fitness < best_fitness:
+            self.set_constants_in_tree(individual.expressions[0], best_constants, 0)
+            return True
+        
+        return False
+    
+    def optimize_constants_coordinate_descent(self, individual: Individual,
+                                              target_function: Callable[[List[float]], List[float]],
+                                              test_points: List[List[float]],
+                                              max_iterations: int = 100,
+                                              tol: float = 1e-8) -> bool:
+        """Оптимизация констант координатным спуском.
+        
+        Поочерёдно оптимизируем каждую константу, фиксируя остальные.
+        Возвращает True если оптимизация была выполнена успешно.
+        """
+        expr = individual.expressions[0].copy()
+        constants_nodes = self.get_constants_from_tree(expr)
+        n_consts = len(constants_nodes)
+        
+        if n_consts == 0:
+            return False
+        
+        if n_consts > 30:
+            return False
+        
+        current_constants = [c.value for c in constants_nodes]
+        best_fitness = self._compute_mse_for_constants(expr, current_constants, target_function, test_points)
+        
+        improved = True
+        iteration = 0
+        
+        while improved and iteration < max_iterations:
+            improved = False
+            iteration += 1
+            
+            for i in range(n_consts):
+                # Поиск оптимального значения для i-й константы методом золотого сечения
+                const_i = current_constants[i]
+                
+                # Определяем диапазон поиска
+                search_range = max(10.0, abs(const_i) * 2.0)
+                a = const_i - search_range
+                b = const_i + search_range
+                
+                # Золотое сечение
+                phi = (1 + math.sqrt(5)) / 2
+                resphi = 2 - phi
+                
+                c = a + resphi * (b - a)
+                d = b - resphi * (b - a)
+                
+                # Вычисляем fitness для c и d
+                test_consts_c = current_constants[:]
+                test_consts_c[i] = c
+                fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_function, test_points)
+                
+                test_consts_d = current_constants[:]
+                test_consts_d[i] = d
+                fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_function, test_points)
+                
+                # Итерации золотого сечения
+                for _ in range(20):
+                    if fitness_c < fitness_d:
+                        b = d
+                        d = c
+                        fitness_d = fitness_c
+                        c = a + resphi * (b - a)
+                        test_consts_c = current_constants[:]
+                        test_consts_c[i] = c
+                        fitness_c = self._compute_mse_for_constants(expr, test_consts_c, target_function, test_points)
+                    else:
+                        a = c
+                        c = d
+                        fitness_c = fitness_d
+                        d = b - resphi * (b - a)
+                        test_consts_d = current_constants[:]
+                        test_consts_d[i] = d
+                        fitness_d = self._compute_mse_for_constants(expr, test_consts_d, target_function, test_points)
+                
+                # Лучшее значение
+                best_val = min(fitness_c, fitness_d)
+                best_const = c if fitness_c < fitness_d else d
+                
+                if best_val < current_constants[i]:
+                    current_constants[i] = best_const
+                    improved = True
+        
+        # Проверка улучшения
+        final_fitness = self._compute_mse_for_constants(expr, current_constants, target_function, test_points)
+        
+        if final_fitness < best_fitness - tol:
+            self.set_constants_in_tree(individual.expressions[0], current_constants, 0)
+            return True
+        
+        return False
+    
+    def optimize_constants(self, individual: Individual,
+                          target_function: Callable[[List[float]], List[float]],
+                          test_points: List[List[float]],
+                          method: str = 'hybrid') -> bool:
+        """Общая функция оптимизации констант.
+        
+        Args:
+            individual: Особь для оптимизации
+            target_function: Целевая функция
+            test_points: Точки данных
+            method: 'nelder', 'coordinate', или 'hybrid'
+        
+        Returns:
+            True если оптимизация улучшила фитнес
+        """
+        if method == 'nelder':
+            return self.optimize_constants_nelder_mead(individual, target_function, test_points)
+        elif method == 'coordinate':
+            return self.optimize_constants_coordinate_descent(individual, target_function, test_points)
+        else:  # hybrid
+            # Сначала Нелдер-Мид, потом координатный спуск
+            result1 = self.optimize_constants_nelder_mead(individual, target_function, test_points, max_iterations=50)
+            result2 = self.optimize_constants_coordinate_descent(individual, target_function, test_points, max_iterations=50)
+            return result1 or result2
+    
     def combine_expressions(self, expr1: Node, expr2: Node) -> Node:
         """Комбинировать два выражения"""
         if random.random() < 0.5:
@@ -1074,6 +1358,16 @@ class GeneticAlgorithm:
                     # Частичный перезапуск популяции
                     self._partial_restart()
                     no_improvement_count = 0
+                
+                # Адаптивная оптимизация констант для лучших особей (раз в 5 поколений)
+                if generation > 0 and generation % 5 == 0:
+                    # Оптимизируем топ-20% популяции
+                    elite_count = max(1, self.population_size // 5)
+                    for i in range(elite_count):
+                        self.optimize_constants(self.population[i], target_function, test_points, method='hybrid')
+                    # Переоценить фитнес после оптимизации
+                    for i in range(elite_count):
+                        self.evaluate_fitness(self.population[i], target_function, test_points)
                 
                 # Создание нового поколения
                 new_population = []
