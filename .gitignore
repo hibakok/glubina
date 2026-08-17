@@ -17,8 +17,6 @@ __pycache__/
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # Dependencies
 .venv/
@@ -28,20 +26,5 @@ node_modules/
 # Build artifacts
 dist/
 build/
-*.o
-*.obj
-*.so
-*.a
-*.dll
-*.exe
-*.out
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# OS
-.DS_Store
-Thumbs.db
+target/
 ```
