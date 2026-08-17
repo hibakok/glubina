@@ -51,6 +51,18 @@ class Node(ABC):
         pass
     
     @abstractmethod
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Вычислить значение узла для набора точек.
+        
+        Args:
+            X: Список входных векторов (каждый вектор размерности input_dim)
+        
+        Returns:
+            Список результатов, по одному на каждую входную точку
+        """
+        pass
+    
+    @abstractmethod
     def depth(self) -> int:
         """Глубина узла"""
         pass
@@ -75,6 +87,10 @@ class Constant(Node):
     def evaluate(self, x: List[float]) -> float:
         return self.value
     
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Возвращает массив констант для всех точек."""
+        return [self.value for _ in X]
+    
     def depth(self) -> int:
         return 1
     
@@ -96,6 +112,20 @@ class Variable(Node):
             return x[self.index]
         # Если индекс выходит за границы, вернуть 0
         return 0.0
+    
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Возвращает массив значений переменной для всех точек."""
+        result = []
+        for x in X:
+            if 0 <= self.index < len(x):
+                val = x[self.index]
+                # Защита от NaN и Inf
+                if math.isnan(val) or math.isinf(val):
+                    val = 0.0
+            else:
+                val = 0.0
+            result.append(val)
+        return result
     
     def depth(self) -> int:
         return 1
@@ -125,6 +155,26 @@ class BinaryOperator(Node):
         except (ZeroDivisionError, ValueError, OverflowError):
             return 0.0
     
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Вычисляет значение оператора для набора точек.
+        
+        Сначала вычисляются результаты левого и правого поддеревьев для всех точек,
+        затем применяется операция поэлементно.
+        """
+        left_results = self.left.evaluate_batch(X)
+        right_results = self.right.evaluate_batch(X)
+        
+        result = []
+        for l, r in zip(left_results, right_results):
+            try:
+                val = self.op(l, r)
+                if math.isnan(val) or math.isinf(val):
+                    val = 0.0
+            except (ZeroDivisionError, ValueError, OverflowError):
+                val = 0.0
+            result.append(val)
+        return result
+    
     def depth(self) -> int:
         return 1 + max(self.left.depth(), self.right.depth())
     
@@ -151,6 +201,25 @@ class UnaryOperator(Node):
             return result
         except (ValueError, ZeroDivisionError, OverflowError):
             return 0.0
+    
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Вычисляет значение оператора для набора точек.
+        
+        Сначала вычисляются результаты поддерева для всех точек,
+        затем применяется операция поэлементно.
+        """
+        operand_results = self.operand.evaluate_batch(X)
+        
+        result = []
+        for val in operand_results:
+            try:
+                res = self.op(val)
+                if math.isnan(res) or math.isinf(res):
+                    res = 0.0
+            except (ValueError, ZeroDivisionError, OverflowError):
+                res = 0.0
+            result.append(res)
+        return result
     
     def depth(self) -> int:
         return 1 + self.operand.depth()
@@ -185,6 +254,33 @@ class ConditionalNode(Node):
                 return self.else_branch.evaluate(x)
         except (ValueError, ZeroDivisionError, OverflowError):
             return 0.0
+    
+    def evaluate_batch(self, X: List[List[float]]) -> List[float]:
+        """Вычисляет значение условного узла для набора точек.
+        
+        Для каждой точки вычисляется условие, и в зависимости от него
+        выбирается результат из then_branch или else_branch.
+        """
+        cond_results = self.condition.evaluate_batch(X)
+        then_results = self.then_branch.evaluate_batch(X)
+        else_results = self.else_branch.evaluate_batch(X)
+        
+        result = []
+        for cond_val, then_val, else_val in zip(cond_results, then_results, else_results):
+            try:
+                if math.isnan(cond_val) or math.isinf(cond_val):
+                    cond_val = 0.0
+                if cond_val > 0:
+                    res = then_val
+                else:
+                    res = else_val
+                # Защита от NaN/Inf в результате
+                if math.isnan(res) or math.isinf(res):
+                    res = 0.0
+            except (ValueError, ZeroDivisionError, OverflowError):
+                res = 0.0
+            result.append(res)
+        return result
     
     def depth(self) -> int:
         return 1 + max(
@@ -650,6 +746,9 @@ class GeneticAlgorithm:
         Для многомерного выхода fitness считается как MSE (средний квадрат ошибки) по всем точкам
         и по всем компонентам выхода.
         Формула: MSE = sum((predicted[i] - actual[i])^2) / (num_points * num_outputs)
+        
+        Используется батчевая обработка: для каждого дерева вычисляется значение сразу для всех точек,
+        что сокращает количество обходов дерева в num_points раз.
         """
         total_squared_error = 0.0
         num_points = len(test_points)
@@ -658,14 +757,21 @@ class GeneticAlgorithm:
         if num_points == 0:
             return float('inf')
         
-        for x_vec in test_points:
-            # Вычислить предсказания для всех компонент выхода
-            predicted = [individual.expressions[i].evaluate(x_vec) for i in range(num_outputs)]
-            actual = target_function(x_vec)
+        # Вычисляем предсказания для всех деревьев и всех точек сразу (батчевая обработка)
+        # predicted_batch[i] = список из num_points значений для i-го дерева
+        predicted_batches = []
+        for i in range(num_outputs):
+            predicted_batch = individual.expressions[i].evaluate_batch(test_points)
+            predicted_batches.append(predicted_batch)
+        
+        # Вычисляем ошибку для каждой точки
+        for point_idx in range(num_points):
+            actual = target_function(test_points[point_idx])
             
             # Суммировать квадрат ошибки по всем компонентам выхода
             for i in range(num_outputs):
-                diff = predicted[i] - actual[i]
+                predicted = predicted_batches[i][point_idx]
+                diff = predicted - actual[i]
                 # Ограничиваем максимальную ошибку чтобы избежать переполнения
                 diff = max(-1e6, min(1e6, diff))
                 total_squared_error += diff * diff
