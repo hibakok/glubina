@@ -45,8 +45,8 @@ class Node(ABC):
     """Базовый класс для узла дерева выражения"""
     
     @abstractmethod
-    def evaluate(self, x: float) -> float:
-        """Вычислить значение узла"""
+    def evaluate(self, x: List[float]) -> float:
+        """Вычислить значение узла. x - вектор входных значений"""
         pass
     
     @abstractmethod
@@ -71,7 +71,7 @@ class Constant(Node):
     def __init__(self, value: float):
         self.value = value
     
-    def evaluate(self, x: float) -> float:
+    def evaluate(self, x: List[float]) -> float:
         return self.value
     
     def depth(self) -> int:
@@ -85,19 +85,25 @@ class Constant(Node):
 
 
 class Variable(Node):
-    """Переменная (x)"""
+    """Переменная с индексом для многомерного входа (x[i])"""
     
-    def evaluate(self, x: float) -> float:
-        return x
+    def __init__(self, index: int = 0):
+        self.index = index
+    
+    def evaluate(self, x: List[float]) -> float:
+        if 0 <= self.index < len(x):
+            return x[self.index]
+        # Если индекс выходит за границы, вернуть 0
+        return 0.0
     
     def depth(self) -> int:
         return 1
     
     def copy(self) -> 'Variable':
-        return Variable()
+        return Variable(self.index)
     
     def to_string(self) -> str:
-        return "x"
+        return f"x[{self.index}]"
 
 
 class BinaryOperator(Node):
@@ -109,7 +115,7 @@ class BinaryOperator(Node):
         self.op = op
         self.symbol = symbol
     
-    def evaluate(self, x: float) -> float:
+    def evaluate(self, x: List[float]) -> float:
         try:
             result = self.op(self.left.evaluate(x), self.right.evaluate(x))
             if math.isnan(result) or math.isinf(result):
@@ -136,7 +142,7 @@ class UnaryOperator(Node):
         self.op = op
         self.symbol = symbol
     
-    def evaluate(self, x: float) -> float:
+    def evaluate(self, x: List[float]) -> float:
         try:
             result = self.op(self.operand.evaluate(x))
             if math.isnan(result) or math.isinf(result):
@@ -160,8 +166,9 @@ class UnaryOperator(Node):
 class ExpressionGenerator:
     """Генератор случайных выражений"""
     
-    def __init__(self, max_depth: int = 5):
+    def __init__(self, max_depth: int = 5, input_dim: int = 1):
         self.max_depth = max_depth
+        self.input_dim = input_dim  # Размерность входного вектора
         self.binary_ops = [
             (operator.add, "+"),
             (operator.sub, "-"),
@@ -208,6 +215,13 @@ class ExpressionGenerator:
     def safe_neg(a: float) -> float:
         return -a
     
+    def _create_random_variable(self) -> Variable:
+        """Создать случайную переменную из доступных индексов"""
+        if self.input_dim <= 0:
+            return Variable(0)
+        index = random.randint(0, self.input_dim - 1)
+        return Variable(index)
+    
     def generate_random(self, depth: int = 0) -> Node:
         """Сгенерировать случайное выражение"""
         self._node_count += 1
@@ -216,14 +230,14 @@ class ExpressionGenerator:
             if random.random() < 0.5:
                 return Constant(random.uniform(-5, 5))
             else:
-                return Variable()
+                return self._create_random_variable()
         
         if depth >= self.max_depth or (depth > 0 and random.random() < 0.4):
             # Листовой узел: константа или переменная
             if random.random() < 0.7:
                 return Constant(random.uniform(-5, 5))
             else:
-                return Variable()
+                return self._create_random_variable()
         
         # Внутренний узел
         choice = random.random()
@@ -264,7 +278,8 @@ class GeneticAlgorithm:
                  elitism_count: int = 5,
                  max_generations: int = 1000,
                  target_fitness: float = 1e-6,
-                 max_depth: int = 8):
+                 max_depth: int = 8,
+                 input_dim: int = 1):
         
         self.population_size = population_size
         self.mutation_rate = mutation_rate
@@ -272,7 +287,8 @@ class GeneticAlgorithm:
         self.elitism_count = elitism_count
         self.max_generations = max_generations
         self.target_fitness = target_fitness
-        self.generator = ExpressionGenerator(max_depth=max_depth)
+        self.input_dim = input_dim  # Размерность входного вектора
+        self.generator = ExpressionGenerator(max_depth=max_depth, input_dim=input_dim)
         self.population: List[Individual] = []
         self.best_fitness_history: List[float] = []
         self.avg_fitness_history: List[float] = []
@@ -288,14 +304,18 @@ class GeneticAlgorithm:
             self.population.append(individual)
     
     def evaluate_fitness(self, individual: Individual, 
-                        target_function: Callable[[float], float],
-                        test_points: List[float]) -> float:
-        """Вычислить приспособленность особи"""
+                        target_function: Callable[[List[float]], float],
+                        test_points: List[List[float]]) -> float:
+        """Вычислить приспособленность особи.
+        
+        test_points - список входных векторов (каждый вектор размерности input_dim)
+        target_function - функция, принимающая вектор и возвращающая скаляр
+        """
         total_error = 0.0
         
-        for x in test_points:
-            predicted = individual.expression.evaluate(x)
-            actual = target_function(x)
+        for x_vec in test_points:
+            predicted = individual.expression.evaluate(x_vec)
+            actual = target_function(x_vec)
             
             # Нормализованная ошибка с ограничением
             error = min(abs(predicted - actual), 1e6)
@@ -497,10 +517,14 @@ class GeneticAlgorithm:
         
         return None
     
-    def evolve(self, target_function: Callable[[float], float],
-               test_points: List[float],
+    def evolve(self, target_function: Callable[[List[float]], float],
+               test_points: List[List[float]],
                verbose: bool = True) -> Tuple[Optional[Individual], dict]:
-        """Запустить эволюцию"""
+        """Запустить эволюцию.
+        
+        target_function - функция, принимающая вектор и возвращающая скаляр
+        test_points - список входных векторов (каждый вектор размерности input_dim)
+        """
         
         try:
             self.initialize_population()
@@ -690,10 +714,12 @@ class GeneticAlgorithm:
 class ApproximatorTester:
     """Класс для тестирования аппроксиматора"""
     
-    def __init__(self):
+    def __init__(self, input_dim: int = 1):
+        self.input_dim = input_dim
+        # Функции теперь принимают вектор [x] вместо скаляра x
         self.test_functions = {
-            "Линейная": lambda x: 2 * x + 3,
-            "Квадратичная": lambda x: x ** 2,
+            "Линейная": lambda x: 2 * x[0] + 3,
+            "Квадратичная": lambda x: x[0] ** 2,
             "Синус": lambda x: math.sin(x),
             "Косинус": lambda x: math.cos(x),
             "Экспонента": lambda x: math.exp(x / 5),

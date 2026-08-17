@@ -17,6 +17,8 @@ __pycache__/
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # Dependencies
 .venv/
@@ -26,14 +28,20 @@ node_modules/
 # Build artifacts
 dist/
 build/
-target/
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+*.out
 
 # Coverage
 .coverage
 coverage/
 htmlcov/
 
-# Testing
-.pytest_cache/
-.mypy_cache/
+# OS
+.DS_Store
+Thumbs.db
 ```
