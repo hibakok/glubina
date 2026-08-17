@@ -475,7 +475,7 @@ class GeneticAlgorithm:
     
     def evolve(self, target_function: Callable[[float], float],
                test_points: List[float],
-               verbose: bool = True) -> Individual:
+               verbose: bool = True) -> Tuple[Individual, dict]:
         """Запустить эволюцию"""
         
         self.initialize_population()
@@ -567,15 +567,27 @@ class GeneticAlgorithm:
             self.population = new_population
             generation += 1
         
+        elapsed_time = time.time() - start_time
+        
         # Если цикл завершился без достижения целевой приспособленности
         if best_ever.fitness >= self.target_fitness and verbose:
-            elapsed = time.time() - start_time
             print("\r" + " " * 100 + "\r", end="")
             print(f"\n🏁 Эволюция завершена после {generation} поколений")
             print(f"   Лучшая ошибка: {best_ever.fitness:.6f}")
-            print(f"   Время: {elapsed:.1f}с")
+            print(f"   Время: {elapsed_time:.1f}с")
         
-        return best_ever
+        # Создать словарь с информацией об эволюции
+        evolution_info = {
+            'generations': generation,
+            'elapsed_time': elapsed_time,
+            'final_fitness': best_ever.fitness,
+            'population_size': self.population_size,
+            'mutation_rate': self.mutation_rate,
+            'crossover_rate': self.crossover_rate,
+            'max_depth': self.generator.max_depth
+        }
+        
+        return best_ever, evolution_info
     
     def _partial_restart(self):
         """Частичный перезапуск популяции для выхода из локального оптимума"""
@@ -639,7 +651,7 @@ class ApproximatorTester:
         
         start_time = time.time()
         
-        best_individual = ga.evolve(func, test_points, verbose=True)
+        best_individual, evolution_info = ga.evolve(func, test_points, verbose=True)
         
         end_time = time.time()
         
@@ -661,9 +673,10 @@ class ApproximatorTester:
             "training_fitness": best_individual.fitness,
             "validation_avg_error": avg_validation_error,
             "validation_max_error": max_validation_error,
-            "evolution_time": end_time - start_time,
+            "evolution_time": evolution_info['elapsed_time'],
             "expression": best_individual.expression.to_string(),
-            "generations": len(ga.best_fitness_history),
+            "generations": evolution_info['generations'],
+            "evolution_info": evolution_info
         }
         
         print(f"\nРезультаты:")
@@ -946,23 +959,44 @@ class EvolutionaryApproximatorApp:
         print()
         
         # Запустить эволюцию
-        self.best_individual = self.ga.evolve(target_func, test_points, verbose=True)
+        self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
         
-        # Сохранить результаты
+        # Сохранить результаты с полной информацией
         if self.best_individual:
+            # Вычислить ошибки на валидационных точках (отдельный набор)
+            validation_points = [x_values[0] + (x_values[-1] - x_values[0]) * i / 10 for i in range(11)]
+            validation_errors = []
+            for x in validation_points:
+                predicted = self.best_individual.expression.evaluate(x)
+                actual = target_func(x)
+                error = abs(predicted - actual)
+                validation_errors.append(error)
+            
+            avg_val_error = sum(validation_errors) / len(validation_errors) if validation_errors else 0
+            max_val_error = max(validation_errors) if validation_errors else 0
+            
             self.last_results = {
                 'type': 'data',
                 'expression': self.best_individual.expression.to_string(),
                 'fitness': self.best_individual.fitness,
+                'validation_avg_error': avg_val_error,
+                'validation_max_error': max_val_error,
                 'data_points': len(x_values),
-                'generations': len(self.ga.best_fitness_history) if self.ga else 0
+                'generations': self.evolution_info['generations'],
+                'elapsed_time': self.evolution_info['elapsed_time'],
+                'evolution_info': self.evolution_info,
+                'x_values': x_values,
+                'y_values': y_values,
+                'target_func': target_func
             }
             
             print("\n" + "-" * 50)
             print("РЕЗУЛЬТАТ:")
             print(f"  Выражение: {self.last_results['expression']}")
-            print(f"  Ошибка (MSE): {self.last_results['fitness']:.6f}")
+            print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
+            print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
             print(f"  Поколений: {self.last_results['generations']}")
+            print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
             
             # Примеры предсказаний на данных
             print("\nПримеры предсказаний на данных:")
@@ -1039,9 +1073,9 @@ class EvolutionaryApproximatorApp:
         print()
         
         # Запустить эволюцию
-        self.best_individual = self.ga.evolve(target_func, test_points, verbose=True)
+        self.best_individual, self.evolution_info = self.ga.evolve(target_func, test_points, verbose=True)
         
-        # Сохранить результаты
+        # Сохранить результаты с полной информацией
         if self.best_individual:
             # Оценка на валидационных точках
             validation_points = [i * 0.15 for i in range(-25, 26)]
@@ -1063,7 +1097,10 @@ class EvolutionaryApproximatorApp:
                 'fitness': self.best_individual.fitness,
                 'validation_avg_error': avg_val_error,
                 'validation_max_error': max_val_error,
-                'generations': len(self.ga.best_fitness_history) if self.ga else 0
+                'generations': self.evolution_info['generations'],
+                'elapsed_time': self.evolution_info['elapsed_time'],
+                'evolution_info': self.evolution_info,
+                'target_func': target_func
             }
             
             print("\n" + "-" * 50)
@@ -1072,6 +1109,7 @@ class EvolutionaryApproximatorApp:
             print(f"  Ошибка на обучении (MSE): {self.last_results['fitness']:.6f}")
             print(f"  Средняя ошибка на валидации: {avg_val_error:.6f}")
             print(f"  Поколений: {self.last_results['generations']}")
+            print(f"  Время эволюции: {self.evolution_info['elapsed_time']:.2f} сек")
             
             # Примеры предсказаний
             print("\nПримеры предсказаний:")
@@ -1112,6 +1150,48 @@ class EvolutionaryApproximatorApp:
         
         print(f"\nСтатистика эволюции:")
         print(f"  Поколений: {self.last_results.get('generations', 'N/A')}")
+        print(f"  Время эволюции: {self.last_results.get('elapsed_time', 'N/A'):.2f} сек" if self.last_results.get('elapsed_time') else "  Время эволюции: N/A")
+        
+        # Таблица сравнения для 7 точек
+        print(f"\nТаблица сравнения предсказаний:")
+        print("-" * 70)
+        print(f"{'X':>10} | {'Фактическое':>14} | {'Предсказанное':>14} | {'Ошибка':>10}")
+        print("-" * 70)
+        
+        target_func = self.last_results.get('target_func')
+        x_values = self.last_results.get('x_values')
+        y_values = self.last_results.get('y_values')
+        
+        if target_func and self.last_results.get('type') == 'builtin':
+            # Для встроенных функций используем равномерные точки
+            sample_points = [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
+            for x in sample_points:
+                actual = target_func(x)
+                predicted = self.best_individual.expression.evaluate(x)
+                error = abs(predicted - actual)
+                print(f"{x:>10.4f} | {actual:>14.6f} | {predicted:>14.6f} | {error:>10.6f}")
+        elif x_values and y_values and self.last_results.get('type') == 'data':
+            # Для данных выбираем 7 равномерных точек
+            n = len(x_values)
+            if n > 0:
+                step = max(1, n // 7)
+                indices = [min(i * step, n - 1) for i in range(7)]
+                for i in indices:
+                    x = x_values[i]
+                    actual = y_values[i]
+                    predicted = self.best_individual.expression.evaluate(x)
+                    error = abs(predicted - actual)
+                    print(f"{x:>10.4f} | {actual:>14.6f} | {predicted:>14.6f} | {error:>10.6f}")
+        else:
+            # Резервный вариант
+            sample_points = [-2.0, -1.0, 0.0, 1.0, 2.0]
+            for x in sample_points:
+                predicted = self.best_individual.expression.evaluate(x)
+                actual = target_func(x) if target_func else 0
+                error = abs(predicted - actual)
+                print(f"{x:>10.4f} | {actual:>14.6f} | {predicted:>14.6f} | {error:>10.6f}")
+        
+        print("-" * 70)
     
     def save_expression_to_file(self) -> None:
         """Сохранить найденное выражение в файл"""
@@ -1124,39 +1204,96 @@ class EvolutionaryApproximatorApp:
             print("Сначала выполните запуск эволюции (пункт 1 или 2).")
             return
         
-        filename = input("Введите имя файла для сохранения: ").strip()
+        # Запрос имени файла с дефолтным значением
+        filename = input("Введите имя файла для сохранения [result.txt]: ").strip()
         
         if not filename:
-            print("Ошибка: имя файла не может быть пустым.")
-            return
+            filename = "result.txt"
         
         expression = self.best_individual.expression.to_string()
         fitness = self.best_individual.fitness
         
         try:
-            with open(filename, 'w') as f:
-                f.write("# Результат эволюционного аппроксиматора\n")
-                f.write(f"# Ошибка (MSE): {fitness}\n")
-                f.write(f"#\n")
-                f.write(f"Выражение: {expression}\n")
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("=" * 60 + "\n")
+                f.write("РЕЗУЛЬТАТ ЭВОЛЮЦИОННОГО АППРОКСИМАТОРА\n")
+                f.write("=" * 60 + "\n\n")
                 
-                # Добавить информацию о параметрах ГА
+                # Найденное выражение
+                f.write("НАЙДЕННОЕ МАТЕМАТИЧЕСКОЕ ВЫРАЖЕНИЕ:\n")
+                f.write(f"  {expression}\n\n")
+                
+                # Параметры эволюции
+                f.write("ПАРАМЕТРЫ ЭВОЛЮЦИИ:\n")
                 if self.ga:
-                    f.write(f"\n# Параметры генетического алгоритма:\n")
-                    f.write(f"# population_size: {self.ga.population_size}\n")
-                    f.write(f"# mutation_rate: {self.ga.mutation_rate}\n")
-                    f.write(f"# crossover_rate: {self.ga.crossover_rate}\n")
-                    f.write(f"# max_generations: {self.ga.max_generations}\n")
-                    f.write(f"# max_depth: {self.ga.generator.max_depth if hasattr(self.ga, 'generator') else 'N/A'}\n")
+                    f.write(f"  Размер популяции: {self.ga.population_size}\n")
+                    f.write(f"  Вероятность мутации: {self.ga.mutation_rate}\n")
+                    f.write(f"  Вероятность кроссовера: {self.ga.crossover_rate}\n")
+                    f.write(f"  Максимум поколений: {self.ga.max_generations}\n")
+                    f.write(f"  Максимальная глубина дерева: {self.ga.generator.max_depth}\n")
+                f.write("\n")
                 
-                # Добавить примеры вычислений
-                f.write(f"\n# Примеры вычислений:\n")
-                test_x = [-2.0, -1.0, 0.0, 1.0, 2.0]
-                for x in test_x:
-                    result = self.best_individual.expression.evaluate(x)
-                    f.write(f"# f({x}) = {result}\n")
+                # Итоговые ошибки
+                f.write("ИТОГОВЫЕ ОШИБКИ:\n")
+                f.write(f"  Ошибка на обучающих данных (MSE): {fitness:.6f}\n")
+                if 'validation_avg_error' in self.last_results:
+                    f.write(f"  Средняя ошибка на валидации: {self.last_results['validation_avg_error']:.6f}\n")
+                    f.write(f"  Максимальная ошибка на валидации: {self.last_results['validation_max_error']:.6f}\n")
+                f.write("\n")
+                
+                # Статистика эволюции
+                f.write("СТАТИСТИКА ЭВОЛЮЦИИ:\n")
+                f.write(f"  Поколений: {self.last_results.get('generations', 'N/A')}\n")
+                if self.last_results.get('elapsed_time'):
+                    f.write(f"  Время эволюции: {self.last_results['elapsed_time']:.2f} сек\n")
+                f.write("\n")
+                
+                # Тип задачи
+                if self.last_results.get('type') == 'data':
+                    f.write("ТИП ЗАДАЧИ: Аппроксимация данных из файла\n")
+                    f.write(f"  Количество точек данных: {self.last_results.get('data_points', 'N/A')}\n")
+                elif self.last_results.get('type') == 'builtin':
+                    f.write("ТИП ЗАДАЧИ: Встроенная функция\n")
+                    f.write(f"  Функция: {self.last_results.get('function_name', 'N/A')}\n")
+                f.write("\n")
+                
+                # Таблица предсказаний
+                f.write("ТАБЛИЦА СРАВНЕНИЯ ПРЕДСКАЗАНИЙ:\n")
+                f.write("-" * 70 + "\n")
+                f.write(f"{'X':>12} | {'Фактическое':>14} | {'Предсказанное':>14} | {'Ошибка':>12}\n")
+                f.write("-" * 70 + "\n")
+                
+                target_func = self.last_results.get('target_func')
+                x_values = self.last_results.get('x_values')
+                y_values = self.last_results.get('y_values')
+                
+                if target_func and self.last_results.get('type') == 'builtin':
+                    # Для встроенных функций используем равномерные точки
+                    sample_points = [-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
+                    for x in sample_points:
+                        actual = target_func(x)
+                        predicted = self.best_individual.expression.evaluate(x)
+                        error = abs(predicted - actual)
+                        f.write(f"{x:>12.4f} | {actual:>14.6f} | {predicted:>14.6f} | {error:>12.6f}\n")
+                elif x_values and y_values and self.last_results.get('type') == 'data':
+                    # Для данных выбираем 7 равномерных точек
+                    n = len(x_values)
+                    if n > 0:
+                        step = max(1, n // 7)
+                        indices = [min(i * step, n - 1) for i in range(7)]
+                        for i in indices:
+                            x = x_values[i]
+                            actual = y_values[i]
+                            predicted = self.best_individual.expression.evaluate(x)
+                            error = abs(predicted - actual)
+                            f.write(f"{x:>12.4f} | {actual:>14.6f} | {predicted:>14.6f} | {error:>12.6f}\n")
+                
+                f.write("-" * 70 + "\n")
+                f.write("\n" + "=" * 60 + "\n")
+                f.write("Конец отчета\n")
+                f.write("=" * 60 + "\n")
             
-            print(f"Выражение успешно сохранено в файл '{filename}'.")
+            print(f"Результат успешно сохранен в файл '{filename}'.")
             
         except PermissionError:
             print(f"Ошибка: нет прав на запись в файл '{filename}'.")
