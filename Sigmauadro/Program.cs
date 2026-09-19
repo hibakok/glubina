@@ -386,7 +386,6 @@ namespace Sigmauadro
                         {
                             Console.WriteLine("Эволюция запущена. Нажмите любую клавишу для остановки.");
                             bool stopRequested = false;
-                            Task.Run(() => { Console.ReadKey(); stopRequested = true; });
                             
                             for (int g = 0; g < gen && !stopRequested; g++)
                             {
@@ -394,6 +393,13 @@ namespace Sigmauadro
                                 var best = engine.GetBest();
                                 // Обновление строки статуса каждое поколение
                                 Console.Write($"\rПоколение {g + 1}/{gen} | Ошибка: {best.Fitness:e} | Поколений без улучшения: {engine.GetGenerationsWithoutImprovement()} | Сложность: {best.Complexity}");
+                                
+                                // Неблокирующая проверка нажатия клавиши
+                                if (Console.KeyAvailable)
+                                {
+                                    Console.ReadKey(true); // Прочитать нажатие
+                                    stopRequested = true;
+                                }
                             }
                             Console.WriteLine();
                             Console.WriteLine($"Эволюция завершена. Лучшая ошибка: {engine.GetBest().Fitness:e}");
