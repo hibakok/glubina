@@ -191,7 +191,7 @@ namespace Sigmauadro
             // Обновляем внутреннюю популяцию лучшими потомками
             for (int i = 0; i < innerPop.Count; i++)
             {
-                var offspring = outerPop.Where(o => IsOffspringOf(o, innerPop[i])).OrderByDescending(o => o.Fitness).FirstOrDefault();
+                var offspring = outerPop.Where(o => IsOffspringOf(o, innerPop[i])).OrderByDescending<Individual, double>(o => o.Fitness).FirstOrDefault();
                 if (offspring != null && FitnessCompare(offspring, innerPop[i]) > 0)
                 {
                     innerPop[i] = offspring.Clone();
@@ -199,7 +199,7 @@ namespace Sigmauadro
             }
             
             // Обновляем лучшую особь
-            var currentBest = innerPop.OrderBy(o => o.Fitness).First();
+            var currentBest = innerPop.OrderBy<Individual, double>(o => o.Fitness).First();
             if (FitnessCompare(currentBest, bestEver) > 0)
                 bestEver = currentBest.Clone();
         }
