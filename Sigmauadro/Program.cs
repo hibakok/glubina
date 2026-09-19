@@ -160,7 +160,6 @@ namespace Sigmauadro
         private List<Individual> innerPop = new List<Individual>();
         private Individual bestEver = new Individual();
         private Random rand = new Random();
-        private StackVM vm = new StackVM();
         private Settings settings = new Settings();
         private DataLoader dataLoader = new DataLoader();
         private OpCode[] ops = Enum.GetValues(typeof(OpCode)).Cast<OpCode>().ToArray();
@@ -177,18 +176,19 @@ namespace Sigmauadro
         public void EvolveGeneration()
         {
             var offspringList = new List<(int parentIdx, Individual ind)>();
-            // Параллельное порождение потомков
+            // Параллельное порождение потомков - каждый поток создает свой VM
             var tasks = new Task[innerPop.Count];
             for (int p = 0; p < innerPop.Count; p++)
             {
                 int parentIdx = p;
                 tasks[p] = Task.Run(() =>
                 {
+                    var vm = new StackVM(); // Каждый поток имеет свой VM
                     for (int i = 0; i < settings.OffspringPerParent; i++)
                     {
                         var offspring = innerPop[parentIdx].Clone();
                         Mutate(offspring);
-                        Evaluate(offspring);
+                        Evaluate(offspring, vm);
                         lock (offspringList) { offspringList.Add((parentIdx, offspring)); }
                     }
                 });
@@ -246,7 +246,7 @@ namespace Sigmauadro
         }
         
         // Оценка особи: средняя абсолютная ошибка на всех парах данных
-        private void Evaluate(Individual ind)
+        private void Evaluate(Individual ind, StackVM vm)
         {
             double totalError = 0;
             int count = 0;
