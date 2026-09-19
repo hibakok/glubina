@@ -1,0 +1,165 @@
+# Популяция Sigmauadro
+# Особей: 20
+
+
+## Особь 1
+input_size: 1
+error: 0.4867546835352166
+complexity: 2
+6 1
+9 1
+
+## Особь 2
+input_size: 1
+error: 1.1889491384551170316352140329635817362274165821849
+complexity: 2
+9 1
+6 1
+
+## Особь 3
+input_size: 1
+error: 0.4867546835352166
+complexity: 5
+12 0
+0 2
+6 1
+9 1
+0 2
+
+## Особь 4
+input_size: 1
+error: 0.4867546835352166
+complexity: 5
+4 1
+4 1
+6 1
+9 1
+1 2
+
+## Особь 5
+input_size: 1
+error: 0.4867546835352166
+complexity: 4
+1 2
+0 2
+6 1
+9 1
+
+## Особь 6
+input_size: 1
+error: 2
+complexity: 2
+13 0
+0 2
+
+## Особь 7
+input_size: 1
+error: 0.4867546835352166
+complexity: 3
+6 1
+9 1
+0 2
+
+## Особь 8
+input_size: 1
+error: 0.4867546835352166
+complexity: 3
+6 1
+0 2
+9 1
+
+## Особь 9
+input_size: 1
+error: 2
+complexity: 2
+13 0
+0 2
+
+## Особь 10
+input_size: 1
+error: 0.4867546835352166
+complexity: 2
+6 1
+9 1
+
+## Особь 11
+input_size: 1
+error: 0.4867546835352166
+complexity: 2
+6 1
+9 1
+
+## Особь 12
+input_size: 1
+error: 0.4867546835352166
+complexity: 5
+5 1
+6 1
+9 1
+5 1
+5 1
+
+## Особь 13
+input_size: 1
+error: 0.4867546835352166
+complexity: 8
+6 1
+9 1
+12 0
+10 1
+13 0
+2 2
+0 2
+1 2
+
+## Особь 14
+input_size: 1
+error: 0.4867546835352166
+complexity: 2
+6 1
+9 1
+
+## Особь 15
+input_size: 1
+error: 0.4867546835352173
+complexity: 5
+10 1
+9 1
+6 1
+5 1
+9 1
+
+## Особь 16
+input_size: 1
+error: 0.4867546835352166
+complexity: 2
+6 1
+9 1
+
+## Особь 17
+input_size: 1
+error: 3
+complexity: 1
+1 2
+
+## Особь 18
+input_size: 1
+error: 1.1889491384551170316352140329635817362274165821849
+complexity: 2
+9 1
+6 1
+
+## Особь 19
+input_size: 1
+error: 0.4867546835352166
+complexity: 3
+6 1
+5 1
+9 1
+
+## Особь 20
+input_size: 1
+error: 2
+complexity: 2
+13 0
+0 2
