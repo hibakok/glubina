@@ -134,8 +134,8 @@ namespace Sigmauadro
                 ip++;
             }
             
-            // Создаем копию стека чтобы избежать ошибки перечисления при модификации
-            var res = new Stack<double>(stack).Reverse().ToArray();
+            // Создаем копию стека через ToArray для безопасного копирования
+            var res = stack.ToArray().Reverse().ToArray();
             return (true, res.Length > 0 ? res : new double[] { 0 });
         }
         
