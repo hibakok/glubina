@@ -393,6 +393,7 @@ namespace Sigmauadro
                                 var best = engine.GetBest();
                                 // Обновление строки статуса каждое поколение
                                 Console.Write($"\rПоколение {g + 1}/{gen} | Ошибка: {best.Fitness:e} | Поколений без улучшения: {engine.GetGenerationsWithoutImprovement()} | Сложность: {best.Complexity}");
+                                Console.Out.Flush(); // Принудительная запись в консоль для немедленного обновления
                                 
                                 // Неблокирующая проверка нажатия клавиши
                                 if (Console.KeyAvailable)
