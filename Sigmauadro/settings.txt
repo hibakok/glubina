@@ -1,5 +1,0 @@
-InnerPopSize=10
-OffspringPerParent=5
-MutationsPerOffspring=3
-MaxGenomeLength=50
-MaxCpuPercent=80
