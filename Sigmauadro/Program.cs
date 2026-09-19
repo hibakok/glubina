@@ -311,8 +311,9 @@ namespace Sigmauadro
         // Тест лучшей особи на одном входе
         public double[] TestBest(double[] input)
         {
-            var (success, result) = vm.Execute(bestEver.Genome, input);
-            return success ? result : null;
+            var vm = new StackVM();
+            var execResult = vm.Execute(bestEver.Genome, input);
+            return execResult.Success ? execResult.Result : null;
         }
     }
     
