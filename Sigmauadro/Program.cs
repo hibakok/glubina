@@ -207,7 +207,7 @@ namespace Sigmauadro
             }
             
             // Обновление лучшей особи и отслеживание улучшений
-            var currentBest = innerPop.OrderBy(o => o.Fitness).First();
+            var currentBest = innerPop.OrderBy(o => o.Fitness).ThenBy(o => o.Complexity).First();
             bool improved = false;
             if (FitnessCompare(currentBest, bestEver) > 0)
             {
@@ -216,15 +216,17 @@ namespace Sigmauadro
             }
             
             // Обновление счетчика поколений без улучшения
-            if (improved || currentBest.Fitness < lastBestFitness)
+            // Улучшение считается только если ошибка строго меньше предыдущей
+            if (improved && currentBest.Fitness < lastBestFitness - 1e-15)
             {
                 generationsWithoutImprovement = 0;
                 lastBestFitness = currentBest.Fitness;
             }
-            else
+            else if (!improved)
             {
                 generationsWithoutImprovement++;
             }
+            // Если improved=true но fitness не изменился (например 0 == 0), счетчик не увеличивается
         }
         
         // Сравнение особей: 1 если a лучше, -1 если b лучше, 0 если равны
