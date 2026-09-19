@@ -98,29 +98,30 @@ namespace Sigmauadro
             
             foreach (var instr in genome)
             {
-                if (stack.Count < GetRequiredStack(instr.Op) && instr.Op != OpCode.Input) return (false, null);
+                int required = GetRequiredStack(instr.Op);
+                if (stack.Count < required && instr.Op != OpCode.Input) return (false, null);
                 
                 switch (instr.Op)
                 {
                     case OpCode.Push: stack.Push(instr.Value); break;
-                    case OpCode.Add: stack.Push(stack.Pop() + stack.Pop()); break;
-                    case OpCode.Sub: var b1 = stack.Pop(); var a1 = stack.Pop(); stack.Push(a1 - b1); break;
-                    case OpCode.Mul: stack.Push(stack.Pop() * stack.Pop()); break;
-                    case OpCode.Div: var b2 = stack.Pop(); var a2 = stack.Pop(); stack.Push(b2 != 0 ? a2 / b2 : 0); break;
-                    case OpCode.Dup: stack.Push(stack.Peek()); break;
-                    case OpCode.Swap: var s1 = stack.Pop(); var s2 = stack.Pop(); stack.Push(s1); stack.Push(s2); break;
+                    case OpCode.Add: if (stack.Count < 2) return (false, null); stack.Push(stack.Pop() + stack.Pop()); break;
+                    case OpCode.Sub: if (stack.Count < 2) return (false, null); var b1 = stack.Pop(); var a1 = stack.Pop(); stack.Push(a1 - b1); break;
+                    case OpCode.Mul: if (stack.Count < 2) return (false, null); stack.Push(stack.Pop() * stack.Pop()); break;
+                    case OpCode.Div: if (stack.Count < 2) return (false, null); var b2 = stack.Pop(); var a2 = stack.Pop(); stack.Push(b2 != 0 ? a2 / b2 : 0); break;
+                    case OpCode.Dup: if (stack.Count < 1) return (false, null); stack.Push(stack.Peek()); break;
+                    case OpCode.Swap: if (stack.Count < 2) return (false, null); var s1 = stack.Pop(); var s2 = stack.Pop(); stack.Push(s1); stack.Push(s2); break;
                     case OpCode.Pop: if (stack.Count > 0) stack.Pop(); break;
-                    case OpCode.Sin: stack.Push(Math.Sin(stack.Pop())); break;
-                    case OpCode.Cos: stack.Push(Math.Cos(stack.Pop())); break;
-                    case OpCode.Exp: stack.Push(Math.Exp(stack.Pop())); break;
-                    case OpCode.Log: stack.Push(Math.Log(stack.Pop())); break;
-                    case OpCode.Sqrt: stack.Push(Math.Sqrt(Math.Max(0, stack.Pop()))); break;
-                    case OpCode.Abs: stack.Push(Math.Abs(stack.Pop())); break;
-                    case OpCode.Neg: stack.Push(-stack.Pop()); break;
-                    case OpCode.Inv: var v = stack.Pop(); stack.Push(v != 0 ? 1.0 / v : 0); break;
-                    case OpCode.Pow: var bp = stack.Pop(); var ap = stack.Pop(); stack.Push(Math.Pow(ap, bp)); break;
-                    case OpCode.Min: stack.Push(Math.Min(stack.Pop(), stack.Pop())); break;
-                    case OpCode.Max: stack.Push(Math.Max(stack.Pop(), stack.Pop())); break;
+                    case OpCode.Sin: if (stack.Count < 1) return (false, null); stack.Push(Math.Sin(stack.Pop())); break;
+                    case OpCode.Cos: if (stack.Count < 1) return (false, null); stack.Push(Math.Cos(stack.Pop())); break;
+                    case OpCode.Exp: if (stack.Count < 1) return (false, null); stack.Push(Math.Exp(stack.Pop())); break;
+                    case OpCode.Log: if (stack.Count < 1) return (false, null); stack.Push(Math.Log(stack.Pop())); break;
+                    case OpCode.Sqrt: if (stack.Count < 1) return (false, null); stack.Push(Math.Sqrt(Math.Max(0, stack.Pop()))); break;
+                    case OpCode.Abs: if (stack.Count < 1) return (false, null); stack.Push(Math.Abs(stack.Pop())); break;
+                    case OpCode.Neg: if (stack.Count < 1) return (false, null); stack.Push(-stack.Pop()); break;
+                    case OpCode.Inv: if (stack.Count < 1) return (false, null); var v = stack.Pop(); stack.Push(v != 0 ? 1.0 / v : 0); break;
+                    case OpCode.Pow: if (stack.Count < 2) return (false, null); var bp = stack.Pop(); var ap = stack.Pop(); stack.Push(Math.Pow(ap, bp)); break;
+                    case OpCode.Min: if (stack.Count < 2) return (false, null); stack.Push(Math.Min(stack.Pop(), stack.Pop())); break;
+                    case OpCode.Max: if (stack.Count < 2) return (false, null); stack.Push(Math.Max(stack.Pop(), stack.Pop())); break;
                     case OpCode.Input: if (input.Length > 0) stack.Push(input[0]); break;
                 }
             }
