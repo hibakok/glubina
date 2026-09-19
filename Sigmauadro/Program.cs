@@ -191,7 +191,7 @@ namespace Sigmauadro
             // Обновляем внутреннюю популяцию лучшими потомками
             for (int i = 0; i < innerPop.Count; i++)
             {
-                var offspring = outerPop.Where(o => IsOffspringOf(o, innerPop[i])).OrderByDescending(FitnessCompare).FirstOrDefault();
+                var offspring = outerPop.Where(o => IsOffspringOf(o, innerPop[i])).OrderByDescending(o => o.Fitness).FirstOrDefault();
                 if (offspring != null && FitnessCompare(offspring, innerPop[i]) > 0)
                 {
                     innerPop[i] = offspring.Clone();
@@ -199,7 +199,7 @@ namespace Sigmauadro
             }
             
             // Обновляем лучшую особь
-            var currentBest = innerPop.OrderBy(FitnessCompare).First();
+            var currentBest = innerPop.OrderBy(o => o.Fitness).First();
             if (FitnessCompare(currentBest, bestEver) > 0)
                 bestEver = currentBest.Clone();
         }
@@ -210,6 +210,11 @@ namespace Sigmauadro
             return true;
         }
         
+        /// <summary>
+        /// Сравнивает две особи по приспособленности.
+        /// Возвращает: 1 если a лучше b, -1 если b лучше a, 0 если равны.
+        /// Лучше та, у которой ошибка меньше, при равной ошибке - проще.
+        /// </summary>
         private int FitnessCompare(Individual a, Individual b)
         {
             // Сначала сравниваем по приспособленности (ошибке)
