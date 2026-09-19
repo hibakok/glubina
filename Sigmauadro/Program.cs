@@ -135,7 +135,7 @@ namespace Sigmauadro
             }
             
             var res = stack.Reverse().ToArray();
-            return (true, res.Length > 0 ? res : new[] { 0 });
+            return (true, res.Length > 0 ? res : new double[] { 0 });
         }
         
         private int GetRequiredStack(OpCode op)
