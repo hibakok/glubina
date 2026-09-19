@@ -8,8 +8,8 @@ using System.Diagnostics;
 
 namespace Sigmauadro
 {
-    // Примитивные операции для стековой VM
-    enum OpCode { Push, Add, Sub, Mul, Div, Dup, Swap, Pop, Sin, Cos, Exp, Log, Sqrt, Abs, Neg, Inv, Pow, Min, Max, Input }
+    // Операции стековой VM (Тьюринг-полная)
+    enum OpCode { Push, Add, Sub, Mul, Div, Dup, Swap, Pop, Sin, Cos, Exp, Log, Sqrt, Abs, Neg, Inv, Pow, Min, Max, Input, Jump, Branch, Eq, Lt, Gt }
     
     // Команда в программе особи
     class Instruction { public OpCode Op; public double Value; }
@@ -86,48 +86,56 @@ namespace Sigmauadro
         }
     }
     
-    // Стековая VM для исполнения программ особей
+    // VM со стеком и регистрами для Тьюринг-полноты
     class StackVM
     {
         private Stack<double> stack = new Stack<double>();
+        private int ip = 0; // instruction pointer
         
         public (bool Success, double[] Result) Execute(List<Instruction> genome, double[] input)
         {
-            stack.Clear();
+            stack.Clear(); ip = 0;
             foreach (var item in input.Reverse()) stack.Push(item);
             
-            foreach (var instr in genome)
+            while (ip < genome.Count)
             {
+                var instr = genome[ip];
                 int required = GetRequiredStack(instr.Op);
                 if (stack.Count < required && instr.Op != OpCode.Input) return (false, null);
                 
                 switch (instr.Op)
                 {
                     case OpCode.Push: stack.Push(instr.Value); break;
-                    case OpCode.Add: if (stack.Count < 2) return (false, null); stack.Push(stack.Pop() + stack.Pop()); break;
-                    case OpCode.Sub: if (stack.Count < 2) return (false, null); var b1 = stack.Pop(); var a1 = stack.Pop(); stack.Push(a1 - b1); break;
-                    case OpCode.Mul: if (stack.Count < 2) return (false, null); stack.Push(stack.Pop() * stack.Pop()); break;
-                    case OpCode.Div: if (stack.Count < 2) return (false, null); var b2 = stack.Pop(); var a2 = stack.Pop(); stack.Push(b2 != 0 ? a2 / b2 : 0); break;
-                    case OpCode.Dup: if (stack.Count < 1) return (false, null); stack.Push(stack.Peek()); break;
-                    case OpCode.Swap: if (stack.Count < 2) return (false, null); var s1 = stack.Pop(); var s2 = stack.Pop(); stack.Push(s1); stack.Push(s2); break;
+                    case OpCode.Add: var ba = stack.Pop(); var aa = stack.Pop(); stack.Push(aa + ba); break;
+                    case OpCode.Sub: var bb = stack.Pop(); var ab = stack.Pop(); stack.Push(ab - bb); break;
+                    case OpCode.Mul: stack.Push(stack.Pop() * stack.Pop()); break;
+                    case OpCode.Div: var bd = stack.Pop(); var ad = stack.Pop(); stack.Push(bd != 0 ? ad / bd : 0); break;
+                    case OpCode.Dup: stack.Push(stack.Peek()); break;
+                    case OpCode.Swap: var x = stack.Pop(); var y = stack.Pop(); stack.Push(x); stack.Push(y); break;
                     case OpCode.Pop: if (stack.Count > 0) stack.Pop(); break;
-                    case OpCode.Sin: if (stack.Count < 1) return (false, null); stack.Push(Math.Sin(stack.Pop())); break;
-                    case OpCode.Cos: if (stack.Count < 1) return (false, null); stack.Push(Math.Cos(stack.Pop())); break;
-                    case OpCode.Exp: if (stack.Count < 1) return (false, null); stack.Push(Math.Exp(stack.Pop())); break;
-                    case OpCode.Log: if (stack.Count < 1) return (false, null); stack.Push(Math.Log(stack.Pop())); break;
-                    case OpCode.Sqrt: if (stack.Count < 1) return (false, null); stack.Push(Math.Sqrt(Math.Max(0, stack.Pop()))); break;
-                    case OpCode.Abs: if (stack.Count < 1) return (false, null); stack.Push(Math.Abs(stack.Pop())); break;
-                    case OpCode.Neg: if (stack.Count < 1) return (false, null); stack.Push(-stack.Pop()); break;
-                    case OpCode.Inv: if (stack.Count < 1) return (false, null); var v = stack.Pop(); stack.Push(v != 0 ? 1.0 / v : 0); break;
-                    case OpCode.Pow: if (stack.Count < 2) return (false, null); var bp = stack.Pop(); var ap = stack.Pop(); stack.Push(Math.Pow(ap, bp)); break;
-                    case OpCode.Min: if (stack.Count < 2) return (false, null); stack.Push(Math.Min(stack.Pop(), stack.Pop())); break;
-                    case OpCode.Max: if (stack.Count < 2) return (false, null); stack.Push(Math.Max(stack.Pop(), stack.Pop())); break;
+                    case OpCode.Sin: stack.Push(Math.Sin(stack.Pop())); break;
+                    case OpCode.Cos: stack.Push(Math.Cos(stack.Pop())); break;
+                    case OpCode.Exp: stack.Push(Math.Exp(stack.Pop())); break;
+                    case OpCode.Log: stack.Push(Math.Log(stack.Pop())); break;
+                    case OpCode.Sqrt: stack.Push(Math.Sqrt(Math.Max(0, stack.Pop()))); break;
+                    case OpCode.Abs: stack.Push(Math.Abs(stack.Pop())); break;
+                    case OpCode.Neg: stack.Push(-stack.Pop()); break;
+                    case OpCode.Inv: var vi = stack.Pop(); stack.Push(vi != 0 ? 1.0 / vi : 0); break;
+                    case OpCode.Pow: var bp = stack.Pop(); var ap = stack.Pop(); stack.Push(Math.Pow(ap, bp)); break;
+                    case OpCode.Min: stack.Push(Math.Min(stack.Pop(), stack.Pop())); break;
+                    case OpCode.Max: stack.Push(Math.Max(stack.Pop(), stack.Pop())); break;
                     case OpCode.Input: if (input.Length > 0) stack.Push(input[0]); break;
+                    case OpCode.Eq: var be = stack.Pop(); var ae = stack.Pop(); stack.Push(Math.Abs(ae - be) < 1e-15 ? 1 : 0); break;
+                    case OpCode.Lt: var bl = stack.Pop(); var al = stack.Pop(); stack.Push(al < bl ? 1 : 0); break;
+                    case OpCode.Gt: var bg = stack.Pop(); var ag = stack.Pop(); stack.Push(ag > bg ? 1 : 0); break;
+                    case OpCode.Branch: var cond = stack.Pop(); if (Math.Abs(cond) < 1e-15) ip = (int)Math.Abs(instr.Value); break;
+                    case OpCode.Jump: ip = (int)Math.Abs(instr.Value); continue;
                 }
+                ip++;
             }
             
-            var result = stack.Reverse().Take(input.Length).ToArray();
-            return (true, result.Length > 0 ? result : new[] { stack.Count > 0 ? stack.Pop() : 0 });
+            var res = stack.Reverse().ToArray();
+            return (true, res.Length > 0 ? res : new[] { 0 });
         }
         
         private int GetRequiredStack(OpCode op)
@@ -135,161 +143,122 @@ namespace Sigmauadro
             switch (op)
             {
                 case OpCode.Add: case OpCode.Sub: case OpCode.Mul: case OpCode.Div:
-                case OpCode.Pow: case OpCode.Min: case OpCode.Max: return 2;
+                case OpCode.Pow: case OpCode.Min: case OpCode.Max: case OpCode.Eq:
+                case OpCode.Lt: case OpCode.Gt: return 2;
                 case OpCode.Sin: case OpCode.Cos: case OpCode.Exp: case OpCode.Log:
-                case OpCode.Sqrt: case OpCode.Abs: case OpCode.Neg: case OpCode.Inv: return 1;
+                case OpCode.Sqrt: case OpCode.Abs: case OpCode.Neg: case OpCode.Inv:
+                case OpCode.Branch: case OpCode.Jump: return 1;
                 default: return 0;
             }
         }
     }
     
-    // Эволюционный движок
+    // Эволюционный движок с параллельной оценкой
     class EvolutionEngine
     {
         private List<Individual> innerPop = new List<Individual>();
-        private List<Individual> outerPop = new List<Individual>();
         private Individual bestEver = new Individual();
         private Random rand = new Random();
         private StackVM vm = new StackVM();
         private Settings settings = new Settings();
         private DataLoader dataLoader = new DataLoader();
-        
         private OpCode[] ops = Enum.GetValues(typeof(OpCode)).Cast<OpCode>().ToArray();
         
         public void Initialize(Settings s, DataLoader d)
         {
-            settings = s;
-            dataLoader = d;
-            innerPop.Clear();
-            
-            // Создаем начальную популяцию с минимальными особями
+            settings = s; dataLoader = d; innerPop.Clear();
+            // Начальная популяция - пустые особи (эволюция с нуля)
             for (int i = 0; i < settings.InnerPopSize; i++)
-            {
-                var ind = new Individual();
-                // Начинаем с простой операции push входного значения
-                ind.Genome.Add(new Instruction { Op = OpCode.Input });
-                innerPop.Add(ind);
-            }
-            bestEver = innerPop[0].Clone();
+                innerPop.Add(new Individual());
+            bestEver = new Individual();
         }
         
         public void EvolveGeneration()
         {
-            outerPop.Clear();
-            
-            // Каждый прародитель порождает потомков
-            foreach (var parent in innerPop)
+            var offspringList = new List<(int parentIdx, Individual ind)>();
+            // Параллельное порождение потомков
+            var tasks = new Task[innerPop.Count];
+            for (int p = 0; p < innerPop.Count; p++)
             {
-                for (int i = 0; i < settings.OffspringPerParent; i++)
+                int parentIdx = p;
+                tasks[p] = Task.Run(() =>
                 {
-                    var offspring = parent.Clone();
-                    Mutate(offspring);
-                    Evaluate(offspring);
-                    outerPop.Add(offspring);
-                }
+                    for (int i = 0; i < settings.OffspringPerParent; i++)
+                    {
+                        var offspring = innerPop[parentIdx].Clone();
+                        Mutate(offspring);
+                        Evaluate(offspring);
+                        lock (offspringList) { offspringList.Add((parentIdx, offspring)); }
+                    }
+                });
+            }
+            Task.WaitAll(tasks);
+            
+            // Замена прародителей превосходящими потомками
+            foreach (var group in offspringList.GroupBy(o => o.parentIdx).OrderBy(g => g.Min(x => x.ind.Fitness)))
+            {
+                var bestOffspring = group.OrderBy(x => x.ind.Fitness).First().ind;
+                if (FitnessCompare(bestOffspring, innerPop[group.Key]) > 0)
+                    innerPop[group.Key] = bestOffspring.Clone();
             }
             
-            // Обновляем внутреннюю популяцию лучшими потомками
-            for (int i = 0; i < innerPop.Count; i++)
-            {
-                var offspring = outerPop.Where(o => IsOffspringOf(o, innerPop[i])).OrderByDescending<Individual, double>(o => o.Fitness).FirstOrDefault();
-                if (offspring != null && FitnessCompare(offspring, innerPop[i]) > 0)
-                {
-                    innerPop[i] = offspring.Clone();
-                }
-            }
-            
-            // Обновляем лучшую особь
-            var currentBest = innerPop.OrderBy<Individual, double>(o => o.Fitness).First();
+            // Обновление лучшей особи
+            var currentBest = innerPop.OrderBy(o => o.Fitness).First();
             if (FitnessCompare(currentBest, bestEver) > 0)
                 bestEver = currentBest.Clone();
         }
         
-        private bool IsOffspringOf(Individual offspring, Individual parent)
-        {
-            // Простая проверка - потомок имеет схожую структуру
-            return true;
-        }
-        
-        /// <summary>
-        /// Сравнивает две особи по приспособленности.
-        /// Возвращает: 1 если a лучше b, -1 если b лучше a, 0 если равны.
-        /// Лучше та, у которой ошибка меньше, при равной ошибке - проще.
-        /// </summary>
+        // Сравнение особей: 1 если a лучше, -1 если b лучше, 0 если равны
+        // Лучше: меньше ошибка, при равенстве - проще
         private int FitnessCompare(Individual a, Individual b)
         {
-            // Сначала сравниваем по приспособленности (ошибке)
             if (Math.Abs(a.Fitness - b.Fitness) > 1e-15)
                 return a.Fitness < b.Fitness ? 1 : -1;
-            // При равной ошибке предпочитаем более простую
             return b.Complexity - a.Complexity;
         }
         
+        // Мутация: добавление/удаление/изменение инструкции, изменение значения
         private void Mutate(Individual ind)
         {
             for (int m = 0; m < settings.MutationsPerOffspring; m++)
             {
-                var mutationType = rand.Next(4);
-                switch (mutationType)
+                switch (rand.Next(4))
                 {
-                    case 0: // Добавить инструкцию
+                    case 0: // Добавить
                         if (ind.Genome.Count < settings.MaxGenomeLength)
-                        {
-                            var pos = rand.Next(ind.Genome.Count + 1);
-                            var newInstr = new Instruction 
-                            { 
-                                Op = ops[rand.Next(ops.Length)],
-                                Value = rand.NextDouble() * 10 - 5
-                            };
-                            ind.Genome.Insert(pos, newInstr);
-                        }
+                            ind.Genome.Insert(rand.Next(ind.Genome.Count + 1), new Instruction { Op = ops[rand.Next(ops.Length)], Value = rand.NextDouble() * 10 - 5 });
                         break;
-                    case 1: // Удалить инструкцию
+                    case 1: // Удалить
                         if (ind.Genome.Count > 1)
-                        {
                             ind.Genome.RemoveAt(rand.Next(ind.Genome.Count));
-                        }
                         break;
-                    case 2: // Изменить операцию
+                    case 2: // Изменить опкод
                         if (ind.Genome.Count > 0)
-                        {
                             ind.Genome[rand.Next(ind.Genome.Count)].Op = ops[rand.Next(ops.Length)];
-                        }
                         break;
                     case 3: // Изменить значение
                         if (ind.Genome.Count > 0)
-                        {
-                            var idx = rand.Next(ind.Genome.Count);
-                            ind.Genome[idx].Value += (rand.NextDouble() - 0.5) * 0.0001;
-                        }
+                            ind.Genome[rand.Next(ind.Genome.Count)].Value += (rand.NextDouble() - 0.5) * 0.0001;
                         break;
                 }
             }
         }
         
+        // Оценка особи: средняя абсолютная ошибка на всех парах данных
         private void Evaluate(Individual ind)
         {
             double totalError = 0;
             int count = 0;
-            
             foreach (var (input, output) in dataLoader.Data)
             {
                 var (success, result) = vm.Execute(ind.Genome, input);
-                if (!success)
-                {
-                    ind.Fitness = double.MaxValue;
-                    return;
-                }
-                
+                if (!success) { ind.Fitness = double.MaxValue; return; }
                 for (int i = 0; i < output.Length; i++)
                 {
-                    var expected = i < output.Length ? output[i] : 0;
-                    var actual = i < result.Length ? result[i] : 0;
-                    totalError += Math.Abs(expected - actual);
+                    totalError += Math.Abs((i < output.Length ? output[i] : 0) - (i < result.Length ? result[i] : 0));
                     count++;
                 }
             }
-            
             ind.Fitness = count > 0 ? totalError / count : double.MaxValue;
         }
         
@@ -297,16 +266,16 @@ namespace Sigmauadro
         public List<Individual> GetInnerPopulation() => innerPop.Select(i => i.Clone()).ToList();
         public void SetInnerPopulation(List<Individual> pop) { innerPop = pop.Select(i => i.Clone()).ToList(); }
         
+        // Экспорт особи в читаемый формат
         public string ExportIndividual(Individual ind)
         {
-            var lines = new List<string> { $"// Особь: сложность={ind.Complexity}, ошибка={ind.Fitness:e}" };
-            foreach (var instr in ind.Genome)
-            {
-                lines.Add($"{instr.Op} {(instr.Op == OpCode.Push || instr.Op == OpCode.Input ? instr.Value.ToString("G17", CultureInfo.InvariantCulture) : "")}");
-            }
+            var lines = new List<string> { $"// Сложность={ind.Complexity}, Ошибка={ind.Fitness:e}" };
+            foreach (var i in ind.Genome)
+                lines.Add($"{i.Op}{(i.Op == OpCode.Push || i.Op == OpCode.Input || i.Op == OpCode.Jump || i.Op == OpCode.Branch ? " " + i.Value.ToString("G17", CultureInfo.InvariantCulture) : "")}");
             return string.Join("\n", lines);
         }
         
+        // Сохранение популяции в файл
         public void SavePopulation(string path)
         {
             var lines = new List<string>();
@@ -318,37 +287,27 @@ namespace Sigmauadro
             File.WriteAllLines(path, lines);
         }
         
+        // Загрузка популяции из файла
         public void LoadPopulation(string path)
         {
             if (!File.Exists(path)) return;
-            var lines = File.ReadAllLines(path);
             var newPop = new List<Individual>();
-            Individual current = null;
-            
-            foreach (var line in lines)
+            Individual cur = null;
+            foreach (var line in File.ReadAllLines(path))
             {
-                if (line == "---INDIVIDUAL---")
-                {
-                    if (current != null) newPop.Add(current);
-                    current = new Individual();
-                }
-                else if (current != null && !line.StartsWith("//"))
+                if (line == "---INDIVIDUAL---") { if (cur != null) newPop.Add(cur); cur = new Individual(); }
+                else if (cur != null && !line.StartsWith("//") && !string.IsNullOrWhiteSpace(line))
                 {
                     var parts = line.Trim().Split(' ');
                     if (Enum.TryParse<OpCode>(parts[0], out var op))
-                    {
-                        current.Genome.Add(new Instruction 
-                        { 
-                            Op = op, 
-                            Value = parts.Length > 1 && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : 0
-                        });
-                    }
+                        cur.Genome.Add(new Instruction { Op = op, Value = parts.Length > 1 && double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : 0 });
                 }
             }
-            if (current != null && current.Genome.Count > 0) newPop.Add(current);
+            if (cur != null && cur.Genome.Count > 0) newPop.Add(cur);
             if (newPop.Count > 0) innerPop = newPop;
         }
         
+        // Тест лучшей особи на одном входе
         public double[] TestBest(double[] input)
         {
             var (success, result) = vm.Execute(bestEver.Genome, input);
@@ -356,6 +315,7 @@ namespace Sigmauadro
         }
     }
     
+    // Главный класс программы
     class Program
     {
         static void Main()
@@ -365,14 +325,12 @@ namespace Sigmauadro
             var dataLoader = new DataLoader();
             var engine = new EvolutionEngine();
             
-            // Загрузка настроек
-            if (File.Exists("settings.txt"))
-                settings.Load("settings.txt");
-            else
-                settings.Save("settings.txt");
+            // Загрузка/создание настроек
+            if (File.Exists("settings.txt")) settings.Load("settings.txt");
+            else settings.Save("settings.txt");
             
-            // Загрузка данных
-            Console.WriteLine("Введите путь к файлу с данными:");
+            // Запрос пути к данным
+            Console.WriteLine("Введите путь к файлу с данными (формат: вход1 вход2 | выход1 выход2):");
             var dataPath = Console.ReadLine();
             if (!dataLoader.Load(dataPath))
             {
@@ -382,8 +340,9 @@ namespace Sigmauadro
             }
             
             engine.Initialize(settings, dataLoader);
-            
             bool exit = false;
+            
+            // Главный цикл меню
             while (!exit)
             {
                 Console.WriteLine("\n=== Главное меню ===");
@@ -395,52 +354,47 @@ namespace Sigmauadro
                 Console.WriteLine("6. Выход");
                 Console.Write("Выбор: ");
                 
-                var choice = Console.ReadLine();
-                switch (choice)
+                switch (Console.ReadLine())
                 {
                     case "1":
                         Console.Write("Сколько поколений эволюции прогонять? ");
-                        if (int.TryParse(Console.ReadLine(), out var generations))
+                        if (int.TryParse(Console.ReadLine(), out var gen))
                         {
-                            Console.WriteLine($"Эволюция на {generations} поколений...");
-                            for (int g = 0; g < generations; g++)
+                            Console.WriteLine($"Эволюция на {gen} поколений...");
+                            for (int g = 0; g < gen; g++)
                             {
                                 engine.EvolveGeneration();
-                                if ((g + 1) % 10 == 0)
-                                    Console.WriteLine($"Поколение {g + 1}, лучшая ошибка: {engine.GetBest().Fitness:e}");
+                                if ((g + 1) % 10 == 0 || g == gen - 1)
+                                    Console.WriteLine($"Поколение {g + 1}, ошибка: {engine.GetBest().Fitness:e}");
                             }
-                            Console.WriteLine($"Завершено. Лучшая ошибка: {engine.GetBest().Fitness:e}");
+                            Console.WriteLine($"Готово. Лучшая ошибка: {engine.GetBest().Fitness:e}");
                         }
                         break;
                     case "2":
-                        Console.WriteLine("Тестирование лучшей особи (введите 'выйти' для выхода):");
+                        Console.WriteLine("Тестирование (введите 'выйти' для выхода):");
                         while (true)
                         {
-                            Console.Write("Входные данные: ");
-                            var inputLine = Console.ReadLine();
-                            if (inputLine?.ToLower() == "выйти") break;
-                            var input = inputLine.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                                .Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
-                            var result = engine.TestBest(input);
-                            Console.WriteLine($"Результат: {string.Join(" ", result?.Select(r => r.ToString("G17", CultureInfo.InvariantCulture)) ?? new[] { "ошибка" })}");
+                            Console.Write("Вход: ");
+                            var line = Console.ReadLine();
+                            if (line?.ToLower() == "выйти") break;
+                            var inp = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).Select(s => double.Parse(s, CultureInfo.InvariantCulture)).ToArray();
+                            var res = engine.TestBest(inp);
+                            Console.WriteLine($"Выход: {string.Join(" ", res?.Select(r => r.ToString("G17", CultureInfo.InvariantCulture)) ?? new[] { "ошибка" })}");
                         }
                         break;
                     case "3":
-                        Console.Write("Имя файла для сохранения: ");
-                        var bestFile = Console.ReadLine();
-                        File.WriteAllText(bestFile, engine.ExportIndividual(engine.GetBest()));
+                        Console.Write("Файл для сохранения особи: ");
+                        File.WriteAllText(Console.ReadLine(), engine.ExportIndividual(engine.GetBest()));
                         Console.WriteLine("Сохранено.");
                         break;
                     case "4":
-                        Console.Write("Имя файла для сохранения популяции: ");
-                        var popFile = Console.ReadLine();
-                        engine.SavePopulation(popFile);
+                        Console.Write("Файл для сохранения популяции: ");
+                        engine.SavePopulation(Console.ReadLine());
                         Console.WriteLine("Популяция сохранена.");
                         break;
                     case "5":
-                        Console.Write("Имя файла для загрузки популяции: ");
-                        var loadFile = Console.ReadLine();
-                        engine.LoadPopulation(loadFile);
+                        Console.Write("Файл для загрузки популяции: ");
+                        engine.LoadPopulation(Console.ReadLine());
                         Console.WriteLine("Популяция загружена.");
                         break;
                     case "6":
