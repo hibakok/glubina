@@ -331,15 +331,9 @@ namespace Sigmauadro
             if (File.Exists("settings.txt")) settings.Load("settings.txt");
             else settings.Save("settings.txt");
             
-            // Запрос пути к данным
-            Console.WriteLine("Введите путь к файлу с данными (формат: вход1 вход2 | выход1 выход2):");
-            var dataPath = Console.ReadLine();
-            if (!dataLoader.Load(dataPath))
-            {
-                Console.WriteLine("Ошибка загрузки данных. Нажмите Enter для выхода.");
-                Console.ReadLine();
-                return;
-            }
+            // Автоматическая загрузка данных из data.txt при старте
+            if (!dataLoader.Load("data.txt"))
+                Console.WriteLine("Файл data.txt не найден. Используйте пункт меню 'Загрузить пары входных-выходных данных' для загрузки данных.");
             
             engine.Initialize(settings, dataLoader);
             bool exit = false;
@@ -353,12 +347,19 @@ namespace Sigmauadro
                 Console.WriteLine("3. Сохранить лучшую особь в файл");
                 Console.WriteLine("4. Сохранить популяцию в файл");
                 Console.WriteLine("5. Загрузить популяцию из файла");
-                Console.WriteLine("6. Выход");
+                Console.WriteLine("6. Загрузить пары входных-выходных данных");
+                Console.WriteLine("7. Выход");
                 Console.Write("Выбор: ");
                 
                 switch (Console.ReadLine())
                 {
                     case "1":
+                        // Проверка наличия данных перед запуском эволюции
+                        if (dataLoader.Data.Count == 0)
+                        {
+                            Console.WriteLine("Ошибка: данные не загружены. Сначала загрузите пары входных-выходных данных.");
+                            break;
+                        }
                         Console.Write("Сколько поколений эволюции прогонять? ");
                         if (int.TryParse(Console.ReadLine(), out var gen))
                         {
@@ -373,6 +374,11 @@ namespace Sigmauadro
                         }
                         break;
                     case "2":
+                        if (dataLoader.Data.Count == 0)
+                        {
+                            Console.WriteLine("Ошибка: данные не загружены. Сначала загрузите пары входных-выходных данных.");
+                            break;
+                        }
                         Console.WriteLine("Тестирование (введите 'выйти' для выхода):");
                         while (true)
                         {
@@ -400,6 +406,19 @@ namespace Sigmauadro
                         Console.WriteLine("Популяция загружена.");
                         break;
                     case "6":
+                        Console.Write("Введите имя файла с парами входных-выходных данных (Enter для data.txt): ");
+                        var filePath = Console.ReadLine();
+                        if (string.IsNullOrWhiteSpace(filePath))
+                            filePath = "data.txt";
+                        if (dataLoader.Load(filePath))
+                        {
+                            engine.Initialize(settings, dataLoader);
+                            Console.WriteLine($"Данные успешно загружены из файла '{filePath}'. Загружено {dataLoader.Data.Count} пар.");
+                        }
+                        else
+                            Console.WriteLine($"Ошибка загрузки данных из файла '{filePath}'.");
+                        break;
+                    case "7":
                         exit = true;
                         break;
                 }
