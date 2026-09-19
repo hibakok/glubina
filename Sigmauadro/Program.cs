@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Globalization;
 using System.Threading.Tasks;
-using System.Diagnostics;
 
 namespace Sigmauadro
 {
@@ -163,6 +162,8 @@ namespace Sigmauadro
         private Settings settings = new Settings();
         private DataLoader dataLoader = new DataLoader();
         private OpCode[] ops = Enum.GetValues(typeof(OpCode)).Cast<OpCode>().ToArray();
+        private int generationsWithoutImprovement = 0; // Поколений с последнего улучшения ошибки
+        private double lastBestFitness = double.MaxValue; // Ошибка лучшей особи для отслеживания улучшений
         
         public void Initialize(Settings s, DataLoader d)
         {
@@ -171,6 +172,8 @@ namespace Sigmauadro
             for (int i = 0; i < settings.InnerPopSize; i++)
                 innerPop.Add(new Individual());
             bestEver = new Individual();
+            generationsWithoutImprovement = 0;
+            lastBestFitness = double.MaxValue;
         }
         
         public void EvolveGeneration()
@@ -203,10 +206,25 @@ namespace Sigmauadro
                     innerPop[group.Key] = bestOffspring.Clone();
             }
             
-            // Обновление лучшей особи
+            // Обновление лучшей особи и отслеживание улучшений
             var currentBest = innerPop.OrderBy(o => o.Fitness).First();
+            bool improved = false;
             if (FitnessCompare(currentBest, bestEver) > 0)
+            {
                 bestEver = currentBest.Clone();
+                improved = true;
+            }
+            
+            // Обновление счетчика поколений без улучшения
+            if (improved || currentBest.Fitness < lastBestFitness)
+            {
+                generationsWithoutImprovement = 0;
+                lastBestFitness = currentBest.Fitness;
+            }
+            else
+            {
+                generationsWithoutImprovement++;
+            }
         }
         
         // Сравнение особей: 1 если a лучше, -1 если b лучше, 0 если равны
@@ -264,6 +282,7 @@ namespace Sigmauadro
         }
         
         public Individual GetBest() => bestEver.Clone();
+        public int GetGenerationsWithoutImprovement() => generationsWithoutImprovement;
         public List<Individual> GetInnerPopulation() => innerPop.Select(i => i.Clone()).ToList();
         public void SetInnerPopulation(List<Individual> pop) { innerPop = pop.Select(i => i.Clone()).ToList(); }
         
@@ -363,14 +382,19 @@ namespace Sigmauadro
                         Console.Write("Сколько поколений эволюции прогонять? ");
                         if (int.TryParse(Console.ReadLine(), out var gen))
                         {
-                            Console.WriteLine($"Эволюция на {gen} поколений...");
-                            for (int g = 0; g < gen; g++)
+                            Console.WriteLine("Эволюция запущена. Нажмите любую клавишу для остановки.");
+                            bool stopRequested = false;
+                            Task.Run(() => { Console.ReadKey(); stopRequested = true; });
+                            
+                            for (int g = 0; g < gen && !stopRequested; g++)
                             {
                                 engine.EvolveGeneration();
-                                if ((g + 1) % 10 == 0 || g == gen - 1)
-                                    Console.WriteLine($"Поколение {g + 1}, ошибка: {engine.GetBest().Fitness:e}");
+                                var best = engine.GetBest();
+                                // Обновление строки статуса каждое поколение
+                                Console.Write($"\rПоколение {g + 1}/{gen} | Ошибка: {best.Fitness:e} | Поколений без улучшения: {engine.GetGenerationsWithoutImprovement()} | Сложность: {best.Complexity}");
                             }
-                            Console.WriteLine($"Готово. Лучшая ошибка: {engine.GetBest().Fitness:e}");
+                            Console.WriteLine();
+                            Console.WriteLine($"Эволюция завершена. Лучшая ошибка: {engine.GetBest().Fitness:e}");
                         }
                         break;
                     case "2":
