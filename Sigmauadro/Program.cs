@@ -108,7 +108,7 @@ namespace Sigmauadro
                     case OpCode.Push: stack.Push(instr.Value); break;
                     case OpCode.Add: var ba = stack.Pop(); var aa = stack.Pop(); stack.Push(aa + ba); break;
                     case OpCode.Sub: var bb = stack.Pop(); var ab = stack.Pop(); stack.Push(ab - bb); break;
-                    case OpCode.Mul: stack.Push(stack.Pop() * stack.Pop()); break;
+                    case OpCode.Mul: var bm = stack.Pop(); var am = stack.Pop(); stack.Push(am * bm); break;
                     case OpCode.Div: var bd = stack.Pop(); var ad = stack.Pop(); stack.Push(bd != 0 ? ad / bd : 0); break;
                     case OpCode.Dup: stack.Push(stack.Peek()); break;
                     case OpCode.Swap: var x = stack.Pop(); var y = stack.Pop(); stack.Push(x); stack.Push(y); break;
@@ -122,8 +122,8 @@ namespace Sigmauadro
                     case OpCode.Neg: stack.Push(-stack.Pop()); break;
                     case OpCode.Inv: var vi = stack.Pop(); stack.Push(vi != 0 ? 1.0 / vi : 0); break;
                     case OpCode.Pow: var bp = stack.Pop(); var ap = stack.Pop(); stack.Push(Math.Pow(ap, bp)); break;
-                    case OpCode.Min: stack.Push(Math.Min(stack.Pop(), stack.Pop())); break;
-                    case OpCode.Max: stack.Push(Math.Max(stack.Pop(), stack.Pop())); break;
+                    case OpCode.Min: var bmin = stack.Pop(); var amin = stack.Pop(); stack.Push(Math.Min(amin, bmin)); break;
+                    case OpCode.Max: var bmax = stack.Pop(); var amax = stack.Pop(); stack.Push(Math.Max(amax, bmax)); break;
                     case OpCode.Input: if (input.Length > 0) stack.Push(input[0]); break;
                     case OpCode.Eq: var be = stack.Pop(); var ae = stack.Pop(); stack.Push(Math.Abs(ae - be) < 1e-15 ? 1 : 0); break;
                     case OpCode.Lt: var bl = stack.Pop(); var al = stack.Pop(); stack.Push(al < bl ? 1 : 0); break;
