@@ -148,7 +148,7 @@ namespace Sigmauadro
                 case OpCode.Lt: case OpCode.Gt: case OpCode.Swap: return 2;
                 case OpCode.Sin: case OpCode.Cos: case OpCode.Exp: case OpCode.Log:
                 case OpCode.Sqrt: case OpCode.Abs: case OpCode.Neg: case OpCode.Inv:
-                case OpCode.Branch: return 1;
+                case OpCode.Branch: case OpCode.Dup: return 1;
                 default: return 0;
             }
         }
