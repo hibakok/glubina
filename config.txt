@@ -1,0 +1,5 @@
+# Настройки Sigmauadro
+max_cpu_percent = 100
+mutation_count = 3
+offspring_per_parent = 4
+population_size = 20
