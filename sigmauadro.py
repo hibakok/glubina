@@ -60,11 +60,12 @@ class Config:
 
 class Primitive:
     """Базовая операция - кирпичик для построения функций"""
-    def __init__(self, name, func, arity, code):
+    def __init__(self, name, func, arity, code, is_numeric=False):
         self.name = name      # Имя операции
         self.func = func      # Функция выполнения
         self.arity = arity    # Количество аргументов
         self.code = code      # Код для отображения
+        self.is_numeric = is_numeric  # Числовой ли это примитив
     
     def execute(self, args):
         """Выполнить операцию над аргументами"""
@@ -87,9 +88,17 @@ PRIMITIVES = [
     Primitive("exp", lambda a: Decimal(str(math.exp(float(a)))) if a < 700 else Decimal('0'), 1, "exp"),
     Primitive("log", lambda a: Decimal(str(math.log(float(a)))) if a > 0 else Decimal('0'), 1, "log"),
     Primitive("pow", lambda a, b: Decimal(str(math.pow(float(a), float(b)))) if a > 0 else Decimal('0'), 2, "^"),
-    Primitive("const0", lambda: Decimal('0'), 0, "0"),
-    Primitive("const1", lambda: Decimal('1'), 0, "1"),
 ]
+
+# Константы будут добавлены динамически при инициализации популяции
+CONSTANT_PRIMITIVES_START_IDX = len(PRIMITIVES)
+NUM_CONSTANT_PRIMITIVES = 10  # Количество констант в пуле
+
+def init_constants():
+    """Инициализировать пул констант"""
+    for i in range(NUM_CONSTANT_PRIMITIVES):
+        val = Decimal(str(random.uniform(-10, 10)))
+        PRIMITIVES.append(Primitive(f"const_{i}", lambda: val, 0, str(val), is_numeric=True))
 
 # ============================================================================
 # ОСОБЬ (ГЕНЕТИЧЕСКОЕ ПРЕДСТАВЛЕНИЕ)
@@ -176,11 +185,9 @@ class Individual:
                 # Добавить новую операцию
                 prim_idx = random.randint(0, len(PRIMITIVES) - 1)
                 prim = PRIMITIVES[prim_idx]
-                # Аргументы - индексы из стека
-                arg_indices = list(range(max(1, prim.arity)))
                 new_genome.append((prim_idx, prim.arity))
             else:
-                mut_type = random.choice(['replace', 'add', 'remove'])
+                mut_type = random.choice(['replace', 'add', 'remove', 'tweak_const'])
                 
                 if mut_type == 'replace' and new_genome:
                     # Заменить узел
@@ -200,6 +207,22 @@ class Individual:
                     # Удалить узел
                     idx = random.randint(0, len(new_genome) - 1)
                     new_genome.pop(idx)
+                
+                elif mut_type == 'tweak_const':
+                    # Тонкая подстройка константы (числовая мутация)
+                    const_indices = [i for i, (pidx, _) in enumerate(new_genome) 
+                                    if pidx >= CONSTANT_PRIMITIVES_START_IDX]
+                    if const_indices:
+                        idx = random.choice(const_indices)
+                        prim_idx, arity = new_genome[idx]
+                        # Сдвинуть значение константы на малую величину
+                        current_val = PRIMITIVES[prim_idx].func()
+                        # Мутация на 1-15 знак после запятой
+                        tweak = Decimal(str(random.uniform(-1e-15, 1e-15)))
+                        new_val = current_val + tweak
+                        # Обновить примитив новым значением
+                        PRIMITIVES[prim_idx] = Primitive(f"const_{prim_idx - CONSTANT_PRIMITIVES_START_IDX}", 
+                                                         lambda v=new_val: v, 0, str(new_val), is_numeric=True)
         
         offspring = Individual(new_genome, self.input_size)
         return offspring
@@ -292,15 +315,13 @@ class EvolutionEngine:
     
     def initialize(self, input_size):
         """Инициализировать внутреннюю популяцию с нуля"""
+        # Инициализировать пул констант при старте
+        init_constants()
+        
         self.inner_population = []
         for _ in range(self.config.population_size):
-            # Начать с минимальной особи (пустой или с одной операцией)
+            # Начать с пустой особи (абсолютный ноль)
             individual = Individual([], input_size)
-            # Добавить одну базовую операцию
-            if random.random() < 0.5:
-                prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                prim = PRIMITIVES[prim_idx]
-                individual.genome = [(prim_idx, prim.arity)]
             individual._calc_complexity()
             individual.evaluate(self.data_pairs)
             self.inner_population.append(individual)
