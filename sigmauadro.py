@@ -11,7 +11,6 @@ import sys
 import os
 from decimal import Decimal, getcontext
 
-# Максимальная точность вычислений
 getcontext().prec = 50
 
 # ============================================================================
@@ -19,7 +18,6 @@ getcontext().prec = 50
 # ============================================================================
 
 class Config:
-    """Настройки эволюции из config.txt"""
     DEFAULTS = {
         'offspring_per_parent': 4,
         'mutation_count': 3,
@@ -32,7 +30,6 @@ class Config:
             setattr(self, k, v)
     
     def load(self, filename="config.txt"):
-        """Загрузить настройки из файла"""
         if os.path.exists(filename):
             with open(filename, 'r') as f:
                 for line in f:
@@ -48,7 +45,6 @@ class Config:
         return self
     
     def save(self, filename="config.txt"):
-        """Сохранить настройки в файл"""
         with open(filename, 'w') as f:
             f.write("# Настройки Sigmauadro\n")
             for key in self.DEFAULTS:
@@ -64,20 +60,18 @@ class Config:
 class Primitive:
     """Базовая операция - кирпичик для построения функций"""
     def __init__(self, name, func, arity, code, is_numeric=False):
-        self.name = name      # Имя операции
-        self.func = func      # Функция выполнения
-        self.arity = arity    # Количество аргументов
-        self.code = code      # Код для отображения
-        self.is_numeric = is_numeric  # Числовой ли это примитив
+        self.name = name
+        self.func = func
+        self.arity = arity
+        self.code = code
+        self.is_numeric = is_numeric
     
     def execute(self, args):
-        """Выполнить операцию над аргументами"""
         try:
             return self.func(*args)
         except (ZeroDivisionError, ValueError, OverflowError):
             return Decimal('0')
 
-# Базовые примитивы
 PRIMITIVES = [
     Primitive("add", lambda a, b: a + b, 2, "+"),
     Primitive("sub", lambda a, b: a - b, 2, "-"),
@@ -93,16 +87,15 @@ PRIMITIVES = [
     Primitive("pow", lambda a, b: Decimal(str(math.pow(float(a), float(b)))) if a > 0 else Decimal('0'), 2, "^"),
 ]
 
-# Константы добавляются динамически
-CONSTANT_PRIMITIVES_START_IDX = len(PRIMITIVES)
-NUM_CONSTANT_PRIMITIVES = 20
+BASE_PRIMITIVE_COUNT = len(PRIMITIVES)
+NUM_CONSTANT_PRIMITIVES = 50
 
 def init_constants():
-    """Инициализировать пул констант"""
-    while len(PRIMITIVES) > CONSTANT_PRIMITIVES_START_IDX:
+    """Инициализировать пул констант со случайными значениями"""
+    while len(PRIMITIVES) > BASE_PRIMITIVE_COUNT:
         PRIMITIVES.pop()
     for i in range(NUM_CONSTANT_PRIMITIVES):
-        val = Decimal(str(random.uniform(-10, 10)))
+        val = Decimal(str(random.uniform(-100, 100)))
         PRIMITIVES.append(Primitive(f"const_{i}", lambda v=val: v, 0, str(val), is_numeric=True))
 
 # ============================================================================
@@ -113,46 +106,30 @@ class Individual:
     """Особь представляющая функцию в виде дерева операций"""
     
     def __init__(self, genome=None, input_size=1):
-        self.genome = genome or []  # Список узлов дерева
+        self.genome = genome or []
         self.input_size = input_size
         self.error = None
-        self.complexity = 0
-        self._calc_complexity()
-    
-    def _calc_complexity(self):
-        """Вычислить сложность особи (количество операций)"""
-        self.complexity = len(self.genome)
+        self.complexity = len(self.genome) if genome else 0
     
     def execute(self, inputs):
         """Выполнить особь на входных данных"""
         if not self.genome:
-            # Пустая особь возвращает 0
             return [Decimal('0')] * max(1, self.input_size)
         
         try:
-            # Стек для вычислений
             stack = list(inputs)
             
-            for node in self.genome:
-                prim_idx, arg_count = node
+            for prim_idx, arg_count in self.genome:
                 if prim_idx >= len(PRIMITIVES):
                     continue
                 
                 prim = PRIMITIVES[prim_idx]
-                
-                # Получаем аргументы
                 args = []
                 for _ in range(arg_count):
-                    if stack:
-                        args.append(stack.pop())
-                    else:
-                        args.append(Decimal('0'))
+                    args.append(stack.pop() if stack else Decimal('0'))
                 
-                # Выполняем операцию
-                result = prim.execute(args)
-                stack.append(result)
+                stack.append(prim.execute(args))
             
-            # Результат - верхние значения стека
             if len(stack) < self.input_size:
                 return stack + [Decimal('0')] * (self.input_size - len(stack))
             return stack[-self.input_size:] if self.input_size > 0 else stack
@@ -187,50 +164,38 @@ class Individual:
         
         for _ in range(mutation_count):
             if not new_genome:
-                # Добавить новую операцию
                 prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                prim = PRIMITIVES[prim_idx]
-                new_genome.append((prim_idx, prim.arity))
+                new_genome.append((prim_idx, PRIMITIVES[prim_idx].arity))
             else:
                 mut_type = random.choice(['replace', 'add', 'remove', 'tweak_const'])
                 
-                if mut_type == 'replace' and new_genome:
-                    # Заменить узел
+                if mut_type == 'replace':
                     idx = random.randint(0, len(new_genome) - 1)
                     prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                    prim = PRIMITIVES[prim_idx]
-                    new_genome[idx] = (prim_idx, prim.arity)
+                    new_genome[idx] = (prim_idx, PRIMITIVES[prim_idx].arity)
                 
                 elif mut_type == 'add':
-                    # Добавить узел
                     prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                    prim = PRIMITIVES[prim_idx]
                     pos = random.randint(0, len(new_genome))
-                    new_genome.insert(pos, (prim_idx, prim.arity))
+                    new_genome.insert(pos, (prim_idx, PRIMITIVES[prim_idx].arity))
                 
                 elif mut_type == 'remove' and len(new_genome) > 1:
-                    # Удалить узел
                     idx = random.randint(0, len(new_genome) - 1)
                     new_genome.pop(idx)
                 
                 elif mut_type == 'tweak_const':
-                    # Тонкая подстройка константы (числовая мутация)
                     const_indices = [i for i, (pidx, _) in enumerate(new_genome) 
-                                    if pidx >= CONSTANT_PRIMITIVES_START_IDX]
+                                    if pidx >= BASE_PRIMITIVE_COUNT]
                     if const_indices:
                         idx = random.choice(const_indices)
-                        prim_idx, arity = new_genome[idx]
-                        # Сдвинуть значение константы на малую величину
+                        prim_idx, _ = new_genome[idx]
                         current_val = PRIMITIVES[prim_idx].func()
-                        # Мутация на 1-15 знак после запятой
                         tweak = Decimal(str(random.uniform(-1e-15, 1e-15)))
                         new_val = current_val + tweak
-                        # Обновить примитив новым значением
-                        PRIMITIVES[prim_idx] = Primitive(f"const_{prim_idx - CONSTANT_PRIMITIVES_START_IDX}", 
+                        PRIMITIVES[prim_idx] = Primitive(f"const_{prim_idx - BASE_PRIMITIVE_COUNT}", 
                                                          lambda v=new_val: v, 0, str(new_val), is_numeric=True)
         
-        offspring = Individual(new_genome, self.input_size)
-        return offspring
+        return Individual(new_genome, self.input_size)
     
     def to_readable(self):
         """Преобразовать геном в читаемое представление"""
@@ -322,9 +287,7 @@ class EvolutionEngine:
         
         self.inner_population = []
         for _ in range(self.config.population_size):
-            # Начать с пустой особи (абсолютный ноль)
             individual = Individual([], input_size)
-            individual._calc_complexity()
             individual.evaluate(self.data_pairs)
             self.inner_population.append(individual)
         
@@ -378,34 +341,24 @@ class EvolutionEngine:
         if not self.inner_population or not self.data_pairs:
             return
         
-        # Каждым прародителем порождается потомство
         for i, parent in enumerate(self.inner_population):
             for _ in range(self.config.offspring_per_parent):
-                # Порождение потомка через мутации
                 offspring = parent.mutate(self.config.mutation_count)
-                
-                # Оценка приспособленности
                 offspring.evaluate(self.data_pairs)
                 
-                # Проверка: может ли потомок заменить прародителя
                 if offspring.error < parent.error:
-                    # Потомок лучше - заменяем прародителя
                     self.inner_population[i] = offspring
-                    parent = offspring  # Обновить ссылку для следующих мутаций
+                    parent = offspring
         
-        # Найти лучшую особь в популяции
         current_best = min(self.inner_population, key=lambda x: x.error if x.error is not None else Decimal('inf'))
-        
-        # Сравнение с глобальным лучшим
         prev_best_error = self.best_individual.error if self.best_individual else Decimal('inf')
         
         if current_best.error < prev_best_error:
             self.best_individual = copy.deepcopy(current_best)
             self.generations_without_improvement = 0
-        elif current_best.error == prev_best_error:
-            if current_best.complexity < self.best_individual.complexity:
-                self.best_individual = copy.deepcopy(current_best)
-                self.generations_without_improvement = 0  # Упрощение тоже улучшение
+        elif current_best.error == prev_best_error and current_best.complexity < self.best_individual.complexity:
+            self.best_individual = copy.deepcopy(current_best)
+            self.generations_without_improvement = 0
         
         self.generations_run += 1
         self.generations_without_improvement += 1
