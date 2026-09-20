@@ -92,13 +92,20 @@ PRIMITIVES = [
 
 # Константы будут добавлены динамически при инициализации популяции
 CONSTANT_PRIMITIVES_START_IDX = len(PRIMITIVES)
-NUM_CONSTANT_PRIMITIVES = 10  # Количество констант в пуле
+NUM_CONSTANT_PRIMITIVES = 20  # Количество констант в пуле
 
 def init_constants():
     """Инициализировать пул констант"""
+    # Очистить старые константы если есть
+    while len(PRIMITIVES) > CONSTANT_PRIMITIVES_START_IDX:
+        PRIMITIVES.pop()
+    # Создать новые константы с правильным замыканием
     for i in range(NUM_CONSTANT_PRIMITIVES):
         val = Decimal(str(random.uniform(-10, 10)))
-        PRIMITIVES.append(Primitive(f"const_{i}", lambda: val, 0, str(val), is_numeric=True))
+        # Использовать класс-обертку для захвата значения
+        def make_const(v):
+            return lambda: v
+        PRIMITIVES.append(Primitive(f"const_{i}", make_const(val), 0, str(val), is_numeric=True))
 
 # ============================================================================
 # ОСОБЬ (ГЕНЕТИЧЕСКОЕ ПРЕДСТАВЛЕНИЕ)
