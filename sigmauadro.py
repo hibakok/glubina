@@ -19,13 +19,18 @@ getcontext().prec = 50
 # ============================================================================
 
 class Config:
-    """Настройки эволюции загружаемые из файла"""
+    """Настройки эволюции из config.txt"""
+    DEFAULTS = {
+        'offspring_per_parent': 4,
+        'mutation_count': 3,
+        'population_size': 20,
+        'max_cpu_percent': 100,
+    }
+    
     def __init__(self):
-        self.offspring_per_parent = 4      # Потомков на прародителя
-        self.mutation_count = 3            # Количество мутаций на потомка
-        self.population_size = 20          # Размер внутренней популяции
-        self.max_cpu_percent = 100         # Макс % использования CPU
-        
+        for k, v in self.DEFAULTS.items():
+            setattr(self, k, v)
+    
     def load(self, filename="config.txt"):
         """Загрузить настройки из файла"""
         if os.path.exists(filename):
@@ -34,8 +39,7 @@ class Config:
                     line = line.strip()
                     if '=' in line and not line.startswith('#'):
                         key, val = line.split('=', 1)
-                        key = key.strip()
-                        val = val.strip()
+                        key, val = key.strip(), val.strip()
                         if hasattr(self, key):
                             try:
                                 setattr(self, key, int(val))
@@ -47,11 +51,10 @@ class Config:
         """Сохранить настройки в файл"""
         with open(filename, 'w') as f:
             f.write("# Настройки Sigmauadro\n")
-            for key in dir(self):
-                if not key.startswith('_') and key not in ('load', 'save'):
-                    val = getattr(self, key)
-                    if isinstance(val, (int, float)):
-                        f.write(f"{key} = {val}\n")
+            for key in self.DEFAULTS:
+                val = getattr(self, key)
+                if isinstance(val, (int, float)):
+                    f.write(f"{key} = {val}\n")
         return self
 
 # ============================================================================
@@ -90,22 +93,17 @@ PRIMITIVES = [
     Primitive("pow", lambda a, b: Decimal(str(math.pow(float(a), float(b)))) if a > 0 else Decimal('0'), 2, "^"),
 ]
 
-# Константы будут добавлены динамически при инициализации популяции
+# Константы добавляются динамически
 CONSTANT_PRIMITIVES_START_IDX = len(PRIMITIVES)
-NUM_CONSTANT_PRIMITIVES = 20  # Количество констант в пуле
+NUM_CONSTANT_PRIMITIVES = 20
 
 def init_constants():
     """Инициализировать пул констант"""
-    # Очистить старые константы если есть
     while len(PRIMITIVES) > CONSTANT_PRIMITIVES_START_IDX:
         PRIMITIVES.pop()
-    # Создать новые константы с правильным замыканием
     for i in range(NUM_CONSTANT_PRIMITIVES):
         val = Decimal(str(random.uniform(-10, 10)))
-        # Использовать класс-обертку для захвата значения
-        def make_const(v):
-            return lambda: v
-        PRIMITIVES.append(Primitive(f"const_{i}", make_const(val), 0, str(val), is_numeric=True))
+        PRIMITIVES.append(Primitive(f"const_{i}", lambda v=val: v, 0, str(val), is_numeric=True))
 
 # ============================================================================
 # ОСОБЬ (ГЕНЕТИЧЕСКОЕ ПРЕДСТАВЛЕНИЕ)
@@ -269,13 +267,10 @@ class Individual:
         return "f(x) = 0"
     
     def save(self, filename):
-        """Сохранить особь в файл"""
+        """Сохранить особь в читаемый файл"""
         with open(filename, 'w') as f:
-            f.write("# Sigmauadro - Лучшая особь\n")
-            f.write(f"# {self.to_readable()}\n\n")
-            f.write(f"input_size: {self.input_size}\n")
-            f.write(f"error: {self.error}\n")
-            f.write(f"complexity: {self.complexity}\n\n")
+            f.write(f"# Sigmauadro - Лучшая особь\n# {self.to_readable()}\n\n")
+            f.write(f"input_size: {self.input_size}\nerror: {self.error}\ncomplexity: {self.complexity}\n\n")
             f.write("# Геном (индекс_примитива, количество_аргументов)\n")
             for node in self.genome:
                 f.write(f"{node[0]} {node[1]}\n")
@@ -405,13 +400,12 @@ class EvolutionEngine:
         prev_best_error = self.best_individual.error if self.best_individual else Decimal('inf')
         
         if current_best.error < prev_best_error:
-            # Новое лучшее решение
             self.best_individual = copy.deepcopy(current_best)
             self.generations_without_improvement = 0
         elif current_best.error == prev_best_error:
-            # Одинаковая ошибка - выбрать более простую
             if current_best.complexity < self.best_individual.complexity:
                 self.best_individual = copy.deepcopy(current_best)
+                self.generations_without_improvement = 0  # Упрощение тоже улучшение
         
         self.generations_run += 1
         self.generations_without_improvement += 1
