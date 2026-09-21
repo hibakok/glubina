@@ -530,8 +530,12 @@ class EvolutionEngine:
         
         return len(self.data_pairs) > 0
     
-    def evolve_generation(self):
-        """Провести одно поколение эволюции"""
+    def evolve_generation(self, simplify_mode=False):
+        """Провести одно поколение эволюции
+        
+        simplify_mode: если True, эволюция направлена на упрощение особи
+                       при ПОЛНОМ сохранении ошибки (не повышать ни на долю)
+        """
         if not self.inner_population or not self.data_pairs:
             return
         
@@ -540,28 +544,56 @@ class EvolutionEngine:
                 offspring = parent.mutate(self.config.mutation_count)
                 offspring.evaluate(self.data_pairs)
                 
-                if offspring.error < parent.error:
-                    self.inner_population[i] = offspring
-                    parent = offspring
+                if simplify_mode:
+                    # Режим упрощения: снижаем сложность при полном сохранении ошибки
+                    # Допускается только снижение ошибки или сохранение на прежнем уровне
+                    if offspring.error < parent.error:
+                        # Потомок лучше по ошибке - принимаем
+                        self.inner_population[i] = offspring
+                        parent = offspring
+                    elif offspring.error == parent.error and offspring.complexity < parent.complexity:
+                        # Ошибка та же, но потомок проще - принимаем
+                        self.inner_population[i] = offspring
+                        parent = offspring
+                    # В остальных случаях отклоняем (включая если ошибка хоть чуть-чуть выше)
+                else:
+                    # Обычный режим: потомок должен быть строго лучше по ошибке
+                    if offspring.error < parent.error:
+                        self.inner_population[i] = offspring
+                        parent = offspring
         
         current_best = min(self.inner_population, key=lambda x: x.error if x.error is not None else Decimal('inf'))
         prev_best_error = self.best_individual.error if self.best_individual else Decimal('inf')
+        prev_best_complexity = self.best_individual.complexity if self.best_individual else float('inf')
         
-        if current_best.error < prev_best_error:
-            self.best_individual = copy.deepcopy(current_best)
-            self.generations_without_improvement = 0
-        elif current_best.error == prev_best_error and current_best.complexity < self.best_individual.complexity:
-            self.best_individual = copy.deepcopy(current_best)
-            self.generations_without_improvement = 0
+        if simplify_mode:
+            # В режиме упрощения: приоритет на сложность при равной ошибке
+            if current_best.error < prev_best_error:
+                self.best_individual = copy.deepcopy(current_best)
+                self.generations_without_improvement = 0
+            elif current_best.error == prev_best_error and current_best.complexity < prev_best_complexity:
+                self.best_individual = copy.deepcopy(current_best)
+                self.generations_without_improvement = 0
+        else:
+            # Обычный режим: приоритет на ошибку, затем сложность
+            if current_best.error < prev_best_error:
+                self.best_individual = copy.deepcopy(current_best)
+                self.generations_without_improvement = 0
+            elif current_best.error == prev_best_error and current_best.complexity < self.best_individual.complexity:
+                self.best_individual = copy.deepcopy(current_best)
+                self.generations_without_improvement = 0
         
         self.generations_run += 1
         self.generations_without_improvement += 1
         self.best_error_history.append(self.best_individual.error if self.best_individual else Decimal('inf'))
     
-    def run_evolution(self, generations, display=True):
-        """Запустить эволюцию на заданное количество поколений"""
+    def run_evolution(self, generations, display=True, simplify_mode=False):
+        """Запустить эволюцию на заданное количество поколений
+        
+        simplify_mode: если True, запустить режим эволюции на упрощение особи
+        """
         for gen in range(generations):
-            self.evolve_generation()
+            self.evolve_generation(simplify_mode=simplify_mode)
             
             if display:
                 # Отобразить прогресс
@@ -569,7 +601,8 @@ class EvolutionEngine:
                 complexity = self.best_individual.complexity if self.best_individual else 0
                 
                 # Очистить строку и вывести прогресс
-                sys.stdout.write(f"\rПоколение {gen + 1}/{generations} | Ошибка: {best_err:.10f} | Без улучшений: {self.generations_without_improvement} | Сложность: {complexity}")
+                mode_prefix = "[УПРОЩЕНИЕ] " if simplify_mode else ""
+                sys.stdout.write(f"\r{mode_prefix}Поколение {gen + 1}/{generations} | Ошибка: {best_err:.10f} | Без улучшений: {self.generations_without_improvement} | Сложность: {complexity}")
                 sys.stdout.flush()
         
         if display:
@@ -714,10 +747,18 @@ def main_menu():
         
         if choice == '1':
             try:
+                # Спросить тип эволюции
+                print("\nВыберите режим эволюции:")
+                print("1. Обычная эволюция")
+                print("2. Эволюция на упрощение особи")
+                mode_choice = input("Ваш выбор (1 или 2): ").strip()
+                
+                simplify_mode = (mode_choice == '2')
+                
                 gens = int(input("Сколько поколений эволюции прогонять? ").strip())
                 if gens > 0:
                     print("\nЗапуск эволюции...")
-                    engine.run_evolution(gens)
+                    engine.run_evolution(gens, simplify_mode=simplify_mode)
                     print(f"\nЭволюция завершена. Пройдено поколений: {engine.generations_run}")
                     if engine.best_individual:
                         print(f"Лучшая ошибка: {engine.best_individual.error}")
