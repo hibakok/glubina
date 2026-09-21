@@ -399,29 +399,31 @@ class Individual:
         return "\n".join(lines)
     
     def save(self, filename):
-        """Сохранить особь в читаемый файл с подробным описанием для ИИ"""
-        with open(filename, 'w') as f:
-            f.write("# Sigmauadro - Лучшая особь\n")
-            f.write(f"# {self.to_readable()}\n\n")
-            f.write(f"input_size: {self.input_size}\n")
-            f.write(f"output_size: {self.output_size}\n")
-            f.write(f"error: {self.error}\n")
-            f.write(f"complexity: {self.complexity}\n\n")
-            
-            # Добавить полное описание особи
-            f.write("=" * 60 + "\n")
-            f.write("ПОДРОБНОЕ ОПИСАНИЕ (для ИИ и человека)\n")
-            f.write("=" * 60 + "\n")
-            f.write(self.describe())
-            f.write("\n\n")
-            
-            # Геном в машинно-читаемом формате
-            f.write("# ГЕНОМ (для загрузки программой)\n")
-            f.write("# Формат: тип_узла значение\n")
-            f.write("# Типы узлов: 0=константа, 1=примитив, 2=вход\n")
-            f.write("# Примитивы: 0=add(+), 1=sub(-), 2=mul(*), 3=(/), 4=neg(-), 5=abs, 6=sqrt, 7=sin, 8=cos, 9=exp, 10=log, 11=pow(^)\n")
-            for node in self.genome:
-                f.write(f"{node[0]} {node[1]}\n")
+        """Сохранить особь в читаемый файл"""
+        try:
+            with open(filename, 'w') as f:
+                f.write("# Sigmauadro - Лучшая особь\n")
+                f.write(f"# {self.to_readable()}\n\n")
+                f.write(f"input_size: {self.input_size}\n")
+                f.write(f"output_size: {self.output_size}\n")
+                err_str = str(self.error) if self.error is not None else "inf"
+                f.write(f"error: {err_str}\n")
+                f.write(f"complexity: {self.complexity}\n\n")
+                
+                f.write("=" * 60 + "\n")
+                f.write("ПОДРОБНОЕ ОПИСАНИЕ\n")
+                f.write("=" * 60 + "\n")
+                f.write(self.describe())
+                f.write("\n\n")
+                
+                f.write("# ГЕНОМ (для загрузки программой)\n")
+                f.write("# Формат: тип_узла значение\n")
+                f.write("# Типы узлов: 0=константа, 1=примитив, 2=вход\n")
+                f.write("# Примитивы: 0=add(+), 1=sub(-), 2=mul(*), 3=(/), 4=neg(-), 5=abs, 6=sqrt, 7=sin, 8=cos, 9=exp, 10=log, 11=pow(^)\n")
+                for node in self.genome:
+                    f.write(f"{node[0]} {node[1]}\n")
+        except Exception as e:
+            print(f"Ошибка сохранения: {e}")
 
     
     @classmethod
@@ -606,17 +608,22 @@ class EvolutionEngine:
     
     def save_population(self, filename="population.txt"):
         """Сохранить всю популяцию в файл"""
-        with open(filename, 'w') as f:
-            f.write(f"# Популяция Sigmauadro\n")
-            f.write(f"# Особей: {len(self.inner_population)}\n\n")
-            for i, ind in enumerate(self.inner_population):
-                f.write(f"\n## Особь {i+1}\n")
-                f.write(f"input_size: {ind.input_size}\n")
-                f.write(f"error: {ind.error}\n")
-                f.write(f"complexity: {ind.complexity}\n")
-                for node in ind.genome:
-                    f.write(f"{node[0]} {node[1]}\n")
-        print(f"Популяция сохранена в {filename}")
+        try:
+            with open(filename, 'w') as f:
+                f.write(f"# Популяция Sigmauadro\n")
+                f.write(f"# Особей: {len(self.inner_population)}\n\n")
+                for i, ind in enumerate(self.inner_population):
+                    f.write(f"\n## Особь {i+1}\n")
+                    f.write(f"input_size: {ind.input_size}\n")
+                    f.write(f"output_size: {ind.output_size}\n")
+                    err_str = str(ind.error) if ind.error is not None else "inf"
+                    f.write(f"error: {err_str}\n")
+                    f.write(f"complexity: {ind.complexity}\n")
+                    for node in ind.genome:
+                        f.write(f"{node[0]} {node[1]}\n")
+            print(f"Популяция сохранена в {filename}")
+        except Exception as e:
+            print(f"Ошибка сохранения популяции: {e}")
     
     def load_population(self, filename):
         """Загрузить популяцию из файла"""
