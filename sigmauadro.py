@@ -620,13 +620,15 @@ class EvolutionEngine:
             self.evolve_generation(simplify_mode=simplify_mode)
             
             if display:
-                # Отобразить прогресс
+                # Отобразить прогресс в столбик с полной точностью ошибки
                 best_err = self.best_individual.error if self.best_individual else Decimal('inf')
                 complexity = self.best_individual.complexity if self.best_individual else 0
                 
-                # Очистить строку и вывести прогресс
                 mode_prefix = "[УПРОЩЕНИЕ] " if simplify_mode else ""
-                sys.stdout.write(f"\r{mode_prefix}Поколение {gen + 1}/{generations} | Ошибка: {best_err:.10f} | Без улучшений: {self.generations_without_improvement} | Сложность: {complexity}")
+                sys.stdout.write(f"\r{mode_prefix}Поколение {gen + 1}/{generations}\n")
+                sys.stdout.write(f"{' ' * len(mode_prefix)}Ошибка: {best_err}\n")
+                sys.stdout.write(f"{' ' * len(mode_prefix)}Без улучшений: {self.generations_without_improvement}\n")
+                sys.stdout.write(f"{' ' * len(mode_prefix)}Сложность: {complexity}")
                 sys.stdout.flush()
         
         if display:
