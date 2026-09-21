@@ -80,104 +80,20 @@ class Primitive:
         except (ZeroDivisionError, ValueError, OverflowError):
             return Decimal('0')
 
-def _safe_div(a, b):
-    """Безопасное деление"""
-    return a / b if b != 0 else Decimal('0')
-
-def _safe_pow(a, b):
-    """Безопасная степень"""
-    if a <= 0:
-        return Decimal('0')
-    try:
-        return Decimal(str(math.pow(float(a), float(b))))
-    except (ValueError, OverflowError):
-        return Decimal('0')
-
-def _safe_log(a):
-    """Безопасный логарифм"""
-    return Decimal(str(math.log(float(a)))) if a > 0 else Decimal('0')
-
-def _safe_sqrt(a):
-    """Безопасный корень"""
-    return a.sqrt() if a >= 0 else Decimal('0')
-
-def _safe_trig(func, a):
-    """Безопасная тригонометрия"""
-    try:
-        return Decimal(str(func(float(a))))
-    except (ValueError, OverflowError):
-        return Decimal('0')
-
-def _cond(pred, then_val, else_val):
-    """Условная операция: если pred != 0 то then_val иначе else_val"""
-    return then_val if pred != 0 else else_val
-
-# Базовые примитивы (неизменяемые) - расширенный набор для Тьюринг-полноты
+# Базовые примитивы (неизменяемые)
 BASE_PRIMITIVES = [
-    # Арифметика (0-4)
     Primitive("add", lambda a, b: a + b, 2, "+"),
     Primitive("sub", lambda a, b: a - b, 2, "-"),
     Primitive("mul", lambda a, b: a * b, 2, "*"),
-    Primitive("div", _safe_div, 2, "/"),
-    Primitive("mod", lambda a, b: a % b if b != 0 else Decimal('0'), 2, "%"),
-    
-    # Унарные (5-9)
+    Primitive("div", lambda a, b: a / b if b != 0 else Decimal('0'), 2, "/"),
     Primitive("neg", lambda a: -a, 1, "-"),
     Primitive("abs", lambda a: abs(a), 1, "abs"),
-    Primitive("sqrt", _safe_sqrt, 1, "√"),
-    Primitive("cbrt", lambda a: Decimal(str(math.copysign(abs(float(a))**(1/3), float(a)))), 1, "∛"),
-    Primitive("square", lambda a: a * a, 1, "²"),
-    
-    # Степени и экспоненты (10-13)
-    Primitive("pow", _safe_pow, 2, "^"),
-    Primitive("exp", lambda a: Decimal(str(math.exp(float(a)))) if a < 700 else Decimal('0'), 1, "e^x"),
-    Primitive("cube", lambda a: a * a * a, 1, "³"),
-    
-    # Логарифмы (14-16)
-    Primitive("log", _safe_log, 1, "ln"),
-    Primitive("log10", lambda a: Decimal(str(math.log10(float(a)))) if a > 0 else Decimal('0'), 1, "log10"),
-    Primitive("log2", lambda a: Decimal(str(math.log2(float(a)))) if a > 0 else Decimal('0'), 1, "log2"),
-    
-    # Тригонометрия (17-22)
-    Primitive("sin", lambda a: _safe_trig(math.sin, a), 1, "sin"),
-    Primitive("cos", lambda a: _safe_trig(math.cos, a), 1, "cos"),
-    Primitive("tan", lambda a: _safe_trig(math.tan, a), 1, "tan"),
-    Primitive("asin", lambda a: _safe_trig(lambda x: math.asin(max(-1, min(1, x))), a), 1, "asin"),
-    Primitive("acos", lambda a: _safe_trig(lambda x: math.acos(max(-1, min(1, x))), a), 1, "acos"),
-    Primitive("atan", lambda a: _safe_trig(math.atan, a), 1, "atan"),
-    
-    # Гиперболические (23-25)
-    Primitive("sinh", lambda a: _safe_trig(math.sinh, a), 1, "sinh"),
-    Primitive("cosh", lambda a: _safe_trig(math.cosh, a), 1, "cosh"),
-    Primitive("tanh", lambda a: _safe_trig(math.tanh, a), 1, "tanh"),
-    
-    # Сравнение (26-31)
-    Primitive("gt", lambda a, b: Decimal('1') if a > b else Decimal('0'), 2, ">"),
-    Primitive("lt", lambda a, b: Decimal('1') if a < b else Decimal('0'), 2, "<"),
-    Primitive("ge", lambda a, b: Decimal('1') if a >= b else Decimal('0'), 2, ">="),
-    Primitive("le", lambda a, b: Decimal('1') if a <= b else Decimal('0'), 2, "<="),
-    Primitive("eq", lambda a, b: Decimal('1') if a == b else Decimal('0'), 2, "=="),
-    Primitive("ne", lambda a, b: Decimal('1') if a != b else Decimal('0'), 2, "!="),
-    
-    # Логические (32-35)
-    Primitive("and", lambda a, b: Decimal('1') if (a != 0 and b != 0) else Decimal('0'), 2, "&&"),
-    Primitive("or", lambda a, b: Decimal('1') if (a != 0 or b != 0) else Decimal('0'), 2, "||"),
-    Primitive("not", lambda a: Decimal('1') if a == 0 else Decimal('0'), 1, "!"),
-    Primitive("xor", lambda a, b: Decimal('1') if ((a != 0) != (b != 0)) else Decimal('0'), 2, "xor"),
-    
-    # Минимум/максимум (36-37)
-    Primitive("min", lambda a, b: a if a < b else b, 2, "min"),
-    Primitive("max", lambda a, b: a if a > b else b, 2, "max"),
-    
-    # Округление (38-41)
-    Primitive("floor", lambda a: Decimal(math.floor(float(a))), 1, "floor"),
-    Primitive("ceil", lambda a: Decimal(math.ceil(float(a))), 1, "ceil"),
-    Primitive("round", lambda a: Decimal(round(float(a))), 1, "round"),
-    Primitive("sign", lambda a: Decimal('1') if a > 0 else (Decimal('-1') if a < 0 else Decimal('0')), 1, "sign"),
-    
-    # Условные (42-43)
-    Primitive("if", _cond, 3, "if"),
-    Primitive("cond", _cond, 3, "?:"),
+    Primitive("sqrt", lambda a: a.sqrt() if a >= 0 else Decimal('0'), 1, "sqrt"),
+    Primitive("sin", lambda a: Decimal(str(math.sin(float(a)))), 1, "sin"),
+    Primitive("cos", lambda a: Decimal(str(math.cos(float(a)))), 1, "cos"),
+    Primitive("exp", lambda a: Decimal(str(math.exp(float(a)))) if a < 700 else Decimal('0'), 1, "exp"),
+    Primitive("log", lambda a: Decimal(str(math.log(float(a)))) if a > 0 else Decimal('0'), 1, "log"),
+    Primitive("pow", lambda a, b: Decimal(str(math.pow(float(a), float(b)))) if a > 0 else Decimal('0'), 2, "^"),
 ]
 
 BASE_PRIMITIVE_COUNT = len(BASE_PRIMITIVES)
@@ -503,11 +419,9 @@ class Individual:
                 f.write("# ГЕНОМ (для загрузки программой)\n")
                 f.write("# Формат: тип_узла значение\n")
                 f.write("# Типы узлов: 0=константа, 1=примитив, 2=вход\n")
-                f.write("# Примитивы: 0-4=арифм(+,-,*,/,%), 5-9=ун(-,abs,√,∛,²), 10-13=степ(e^x,³,^), 14-16=лог(ln,log10,log2)\n")
-                f.write("# 17-22=триг(sin,cos,tan,asin,acos,atan), 23-25=гипер(sinh,cosh,tanh)\n")
-                f.write("# 26-31=сравн(>,<,>=,<=,==,!=), 32-35=лог(&&,||,!,xor), 36-37=min,max\n")
-                f.write("# 38-41=окр(floor,ceil,round,sign), 42-43=if,cond\n")
-                f.write(f"{node[0]} {node[1]}\n")
+                f.write("# Примитивы: 0=add(+), 1=sub(-), 2=mul(*), 3=(/), 4=neg(-), 5=abs, 6=sqrt, 7=sin, 8=cos, 9=exp, 10=log, 11=pow(^)\n")
+                for node in self.genome:
+                    f.write(f"{node[0]} {node[1]}\n")
         except Exception as e:
             print(f"Ошибка сохранения: {e}")
 
