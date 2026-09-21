@@ -399,9 +399,9 @@ class Individual:
         return "\n".join(lines)
     
     def save(self, filename):
-        """Сохранить особь в читаемый файл"""
+        """Сохранить особь в читаемый файл (UTF-8 для поддержки символов)"""
         try:
-            with open(filename, 'w') as f:
+            with open(filename, 'w', encoding='utf-8') as f:
                 f.write("# Sigmauadro - Лучшая особь\n")
                 f.write(f"# {self.to_readable()}\n\n")
                 f.write(f"input_size: {self.input_size}\n")
