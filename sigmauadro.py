@@ -254,58 +254,175 @@ class Individual:
         return ind
     
     def to_readable(self):
-        """Преобразовать геном в читаемое выражение"""
+        """Преобразовать геном в читаемое выражение с поддержкой multi-input/output"""
         if not self.genome:
-            return "f(x) = 0"
+            return "f(" + ", ".join(f"x{i}" for i in range(self.input_size)) + ") = 0"
         
-        stack = []
-        for node in self.genome:
-            node_type = node[0]
-            
-            if node_type == NODE_CONST:
-                stack.append(str(node[1]))
-            elif node_type == NODE_INPUT:
-                idx = node[1]
-                if idx == 0:
-                    stack.append("x")
-                else:
-                    stack.append(f"x{idx}")
-            elif node_type == NODE_PRIM:
-                prim = get_primitive(node[1])
-                if prim is None:
-                    continue
-                args = []
-                for _ in range(prim.arity):
-                    if stack:
-                        args.append(stack.pop())
-                    else:
-                        args.append("x")
+        try:
+            stack = []
+            for node in self.genome:
+                node_type = node[0]
                 
-                if prim.arity == 0:
-                    expr = prim.code
-                elif prim.arity == 1:
-                    expr = f"{prim.code}({args[0]})"
+                if node_type == NODE_CONST:
+                    val = node[1]
+                    # Форматировать константу красиво
+                    if val == int(val):
+                        stack.append(str(int(val)))
+                    else:
+                        stack.append(str(val))
+                elif node_type == NODE_INPUT:
+                    idx = node[1]
+                    if self.input_size == 1:
+                        stack.append("x")
+                    else:
+                        stack.append(f"x{idx}")
+                elif node_type == NODE_PRIM:
+                    prim = get_primitive(node[1])
+                    if prim is None:
+                        continue
+                    args = []
+                    for _ in range(prim.arity):
+                        if stack:
+                            args.append(stack.pop())
+                        else:
+                            args.append("x")
+                    
+                    if prim.arity == 0:
+                        expr = prim.code
+                    elif prim.arity == 1:
+                        expr = f"{prim.code}({args[0]})"
+                    else:
+                        expr = f"({args[1]} {prim.code} {args[0]})"
+                    stack.append(expr)
+            
+            if stack:
+                if self.input_size == 1:
+                    return f"f(x) = {stack[-1]}"
                 else:
-                    expr = f"({args[1]} {prim.code} {args[0]})"
-                stack.append(expr)
+                    inputs = ", ".join(f"x{i}" for i in range(self.input_size))
+                    return f"f({inputs}) = {stack[-1]}"
+        except Exception:
+            pass
         
-        if stack:
-            return f"f(x) = {stack[-1]}"
         return "f(x) = 0"
     
+    def describe(self):
+        """Подробное описание что делает особь (для ИИ и человека)"""
+        lines = []
+        lines.append("=" * 60)
+        lines.append("ОПИСАНИЕ ОСОБИ")
+        lines.append("=" * 60)
+        
+        if not self.genome:
+            lines.append("Пустая функция - всегда возвращает 0")
+            return "\n".join(lines)
+        
+        lines.append(f"Входов: {self.input_size}")
+        lines.append(f"Выходов: {self.output_size}")
+        lines.append(f"Сложность (кол-во операций): {self.complexity}")
+        lines.append(f"Ошибка на обучающих данных: {self.error}")
+        lines.append("")
+        
+        # Построить структуру функции симулируя выполнение
+        lines.append("СТРУКТУРА ФУНКЦИИ:")
+        lines.append("-" * 40)
+        
+        try:
+            stack = []
+            step = 1
+            input_counter = 0
+            for node in self.genome:
+                node_type = node[0]
+                
+                if node_type == NODE_CONST:
+                    val = node[1]
+                    val_str = str(int(val)) if val == int(val) else str(val)
+                    stack.append(val_str)
+                    lines.append(f"  [{step}] Константа: {val_str}")
+                elif node_type == NODE_INPUT:
+                    idx = node[1]
+                    sym = "x" if self.input_size == 1 else f"x{idx}"
+                    stack.append(sym)
+                    lines.append(f"  [{step}] Вход: {sym}")
+                elif node_type == NODE_PRIM:
+                    prim = get_primitive(node[1])
+                    if prim is None:
+                        continue
+                    args = []
+                    for _ in range(prim.arity):
+                        if stack:
+                            args.append(stack.pop())
+                        else:
+                            # Если стек пуст, использовать заглушку
+                            args.append(f"a{len(args)}")
+                    
+                    if prim.arity == 1:
+                        op_name = {"neg": "-", "abs": "abs", "sqrt": "√", "sin": "sin", "cos": "cos", "exp": "exp", "log": "ln"}.get(prim.name, prim.code)
+                        result = f"{op_name}({args[0]})"
+                        lines.append(f"  [{step}] {op_name}({args[0]})")
+                    elif prim.arity == 2:
+                        result = f"({args[1]} {prim.code} {args[0]})"
+                        lines.append(f"  [{step}] {args[1]} {prim.code} {args[0]}")
+                    else:
+                        result = prim.code
+                        lines.append(f"  [{step}] {prim.code}")
+                    stack.append(result)
+                step += 1
+            
+            if stack:
+                lines.append("")
+                final_expr = stack[-1]
+                if self.input_size == 1:
+                    lines.append(f"ФОРМУЛА: f(x) = {final_expr}")
+                else:
+                    inputs = ", ".join(f"x{i}" for i in range(self.input_size))
+                    lines.append(f"ФОРМУЛА: f({inputs}) = {final_expr}")
+        except Exception as e:
+            lines.append(f"Ошибка: {e}")
+        
+        lines.append("")
+        lines.append("ГЕНОМ (машинное представление):")
+        lines.append("-" * 40)
+        type_names = {NODE_CONST: "CONST", NODE_PRIM: "PRIM", NODE_INPUT: "INPUT"}
+        for i, node in enumerate(self.genome):
+            node_type, val = node
+            tname = type_names.get(node_type, "???")
+            if node_type == NODE_PRIM:
+                prim = get_primitive(val)
+                vdesc = f"{prim.name} ({prim.code})" if prim else val
+            elif node_type == NODE_INPUT:
+                vdesc = f"x{val}"
+            else:
+                vdesc = val
+            lines.append(f"  #{i}: {tname} = {vdesc}")
+        
+        return "\n".join(lines)
+    
     def save(self, filename):
-        """Сохранить особь в читаемый файл"""
+        """Сохранить особь в читаемый файл с подробным описанием для ИИ"""
         with open(filename, 'w') as f:
-            f.write(f"# Sigmauadro - Лучшая особь\n")
+            f.write("# Sigmauadro - Лучшая особь\n")
             f.write(f"# {self.to_readable()}\n\n")
             f.write(f"input_size: {self.input_size}\n")
             f.write(f"output_size: {self.output_size}\n")
             f.write(f"error: {self.error}\n")
             f.write(f"complexity: {self.complexity}\n\n")
-            f.write("# Геном (тип_узла, значение)\n")
-            f.write("# Типы: 0=константа, 1=примитив, 2=вход\n")
+            
+            # Добавить полное описание особи
+            f.write("=" * 60 + "\n")
+            f.write("ПОДРОБНОЕ ОПИСАНИЕ (для ИИ и человека)\n")
+            f.write("=" * 60 + "\n")
+            f.write(self.describe())
+            f.write("\n\n")
+            
+            # Геном в машинно-читаемом формате
+            f.write("# ГЕНОМ (для загрузки программой)\n")
+            f.write("# Формат: тип_узла значение\n")
+            f.write("# Типы узлов: 0=константа, 1=примитив, 2=вход\n")
+            f.write("# Примитивы: 0=add(+), 1=sub(-), 2=mul(*), 3=(/), 4=neg(-), 5=abs, 6=sqrt, 7=sin, 8=cos, 9=exp, 10=log, 11=pow(^)\n")
             for node in self.genome:
                 f.write(f"{node[0]} {node[1]}\n")
+
     
     @classmethod
     def load(cls, filename):
