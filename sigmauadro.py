@@ -55,6 +55,14 @@ class Config:
         return self
 
 # ============================================================================
+# ТИПЫ УЗЛОВ (ENUM)
+# ============================================================================
+
+NODE_CONST = 0      # Константа со значением
+NODE_PRIM = 1       # Базовый примитив
+NODE_INPUT = 2      # Входная переменная
+
+# ============================================================================
 # МИНИМАЛЬНЫЕ КИРПИЧИКИ (БАЗОВЫЕ ОПЕРАЦИИ)
 # ============================================================================
 
@@ -90,11 +98,6 @@ BASE_PRIMITIVES = [
 
 BASE_PRIMITIVE_COUNT = len(BASE_PRIMITIVES)
 
-# Типы узлов генома
-NODE_CONST = 0      # Константа со значением
-NODE_PRIM = 1       # Базовый примитив
-NODE_INPUT = 2      # Входная переменная
-
 def get_primitive(idx):
     """Получить базовый примитив по индексу"""
     if 0 <= idx < BASE_PRIMITIVE_COUNT:
@@ -114,9 +117,10 @@ class Individual:
     - NODE_INPUT: (NODE_INPUT, индекс_входа) - входная переменная
     """
     
-    def __init__(self, genome=None, input_size=1):
+    def __init__(self, genome=None, input_size=1, output_size=1):
         self.genome = genome or []
         self.input_size = input_size
+        self.output_size = output_size
         self.error = None
         self._complexity = len(self.genome) if genome else 0
     
@@ -130,9 +134,12 @@ class Individual:
         self._complexity = len(self.genome)
     
     def execute(self, inputs):
-        """Выполнить особь на входных данных используя стек"""
+        """Выполнить особь на входных данных используя стек
+        
+        Возвращает список выходов размером output_size
+        """
         if not self.genome:
-            return [Decimal('0')] * max(1, self.input_size)
+            return [Decimal('0')] * self.output_size
         
         try:
             stack = list(inputs)
@@ -155,12 +162,15 @@ class Individual:
                         args.append(stack.pop() if stack else Decimal('0'))
                     stack.append(prim.execute(args))
             
-            if len(stack) < self.input_size:
-                return stack + [Decimal('0')] * (self.input_size - len(stack))
-            return stack[-self.input_size:] if self.input_size > 0 else stack
+            # Вернуть последние output_size значений
+            result = stack[-self.output_size:] if len(stack) >= self.output_size else stack
+            # Дополнить нулями если нужно
+            while len(result) < self.output_size:
+                result.append(Decimal('0'))
+            return result
             
         except Exception:
-            return [Decimal('0')] * max(1, self.input_size)
+            return [Decimal('0')] * self.output_size
     
     def evaluate(self, data_pairs):
         """Вычислить ошибку на всех парах данных"""
@@ -198,7 +208,9 @@ class Individual:
                     val = Decimal(str(random.uniform(-100, 100)))
                     new_genome.append((NODE_CONST, val))
             else:
-                mut_type = random.choice(['replace', 'add', 'remove', 'tweak_const'])
+                # Увеличить вероятность add для роста сложности
+                weights = [0.35, 0.35, 0.15, 0.15]  # replace, add, remove, tweak_const
+                mut_type = random.choices(['replace', 'add', 'remove', 'tweak_const'], weights=weights)[0]
                 
                 if mut_type == 'replace':
                     idx = random.randint(0, len(new_genome) - 1)
@@ -231,11 +243,13 @@ class Individual:
                     if const_indices:
                         idx = random.choice(const_indices)
                         current_val = new_genome[idx][1]
-                        tweak = Decimal(str(random.uniform(-1e-15, 1e-15)))
+                        # Адаптивный размер твика - больше для больших значений
+                        scale = max(abs(current_val), Decimal('1')) * Decimal('1e-10')
+                        tweak = Decimal(str(random.uniform(-float(scale), float(scale))))
                         new_val = current_val + tweak
                         new_genome[idx] = (NODE_CONST, new_val)
         
-        ind = Individual(new_genome, self.input_size)
+        ind = Individual(new_genome, self.input_size, self.output_size)
         ind._update_complexity()
         return ind
     
@@ -285,6 +299,7 @@ class Individual:
             f.write(f"# Sigmauadro - Лучшая особь\n")
             f.write(f"# {self.to_readable()}\n\n")
             f.write(f"input_size: {self.input_size}\n")
+            f.write(f"output_size: {self.output_size}\n")
             f.write(f"error: {self.error}\n")
             f.write(f"complexity: {self.complexity}\n\n")
             f.write("# Геном (тип_узла, значение)\n")
@@ -297,12 +312,15 @@ class Individual:
         """Загрузить особь из файла"""
         genome = []
         input_size = 1
+        output_size = 1
         
         with open(filename, 'r') as f:
             for line in f:
                 line = line.strip()
                 if line.startswith('input_size:'):
                     input_size = int(line.split(':')[1].strip())
+                elif line.startswith('output_size:'):
+                    output_size = int(line.split(':')[1].strip())
                 elif line and not line.startswith('#'):
                     parts = line.split()
                     if len(parts) >= 2:
@@ -317,7 +335,7 @@ class Individual:
                         except ValueError:
                             pass
         
-        individual = cls(genome, input_size)
+        individual = cls(genome, input_size, output_size)
         return individual
 
 # ============================================================================
@@ -336,11 +354,11 @@ class EvolutionEngine:
         self.generations_without_improvement = 0
         self.best_error_history = []
     
-    def initialize(self, input_size):
+    def initialize(self, input_size, output_size=1):
         """Инициализировать внутреннюю популяцию с нуля"""
         self.inner_population = []
         for _ in range(self.config.population_size):
-            individual = Individual([], input_size)
+            individual = Individual([], input_size, output_size)
             individual.evaluate(self.data_pairs)
             self.inner_population.append(individual)
         
@@ -377,15 +395,19 @@ class EvolutionEngine:
                     continue
         
         if self.data_pairs:
-            # Обновить размерность входа
+            # Определить размерности входа и выхода
             input_size = len(self.data_pairs[0][0])
+            output_size = len(self.data_pairs[0][1])
+            # Обновить особи
             for ind in self.inner_population:
                 ind.input_size = input_size
+                ind.output_size = output_size
             if self.best_individual:
                 self.best_individual.input_size = input_size
+                self.best_individual.output_size = output_size
             # Инициализировать популяцию если пуста
             if not self.inner_population:
-                self.initialize(input_size)
+                self.initialize(input_size, output_size)
         
         return len(self.data_pairs) > 0
     
@@ -488,12 +510,15 @@ class EvolutionEngine:
         population = []
         current_genome = []
         current_input_size = 1
+        current_output_size = 1
         
         with open(filename, 'r') as f:
             for line in f:
                 line = line.strip()
                 if line.startswith('input_size:'):
                     current_input_size = int(line.split(':')[1].strip())
+                elif line.startswith('output_size:'):
+                    current_output_size = int(line.split(':')[1].strip())
                 elif line and not line.startswith('#') and not line.startswith('##'):
                     if ':' not in line:
                         parts = line.split()
@@ -510,13 +535,13 @@ class EvolutionEngine:
                                 pass
                     elif line.startswith('error:') or line.startswith('complexity:'):
                         if current_genome:
-                            ind = Individual(current_genome, current_input_size)
+                            ind = Individual(current_genome, current_input_size, current_output_size)
                             ind.evaluate(self.data_pairs)
                             population.append(ind)
                             current_genome = []
         
         if current_genome:
-            ind = Individual(current_genome, current_input_size)
+            ind = Individual(current_genome, current_input_size, current_output_size)
             ind.evaluate(self.data_pairs)
             population.append(ind)
         
@@ -637,7 +662,10 @@ def main_menu():
                     val = int(input("Размер популяции: ").strip())
                     if val > 0:
                         config.population_size = val
-                        engine.initialize(len(engine.data_pairs[0][0]) if engine.data_pairs else 1)
+                        # Переинициализировать популяцию с новыми параметрами
+                        input_size = len(engine.data_pairs[0][0]) if engine.data_pairs else 1
+                        output_size = len(engine.data_pairs[0][1]) if engine.data_pairs else 1
+                        engine.initialize(input_size, output_size)
                     config.save()
                     print("Настройки сохранены")
                 except ValueError:
