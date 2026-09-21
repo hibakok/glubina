@@ -118,7 +118,16 @@ class Individual:
         self.genome = genome or []
         self.input_size = input_size
         self.error = None
-        self.complexity = len(self.genome) if genome else 0
+        self._complexity = len(self.genome) if genome else 0
+    
+    @property
+    def complexity(self):
+        """Кэшированная сложность особи"""
+        return self._complexity
+    
+    def _update_complexity(self):
+        """Обновить сложность после изменения генома"""
+        self._complexity = len(self.genome)
     
     def execute(self, inputs):
         """Выполнить особь на входных данных используя стек"""
@@ -180,7 +189,6 @@ class Individual:
         
         for _ in range(mutation_count):
             if not new_genome:
-                # Добавить первый узел
                 node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
                 if node_type == NODE_PRIM:
                     new_genome.append((NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1)))
@@ -223,12 +231,13 @@ class Individual:
                     if const_indices:
                         idx = random.choice(const_indices)
                         current_val = new_genome[idx][1]
-                        # Минимальная мутация константы
                         tweak = Decimal(str(random.uniform(-1e-15, 1e-15)))
                         new_val = current_val + tweak
                         new_genome[idx] = (NODE_CONST, new_val)
         
-        return Individual(new_genome, self.input_size)
+        ind = Individual(new_genome, self.input_size)
+        ind._update_complexity()
+        return ind
     
     def to_readable(self):
         """Преобразовать геном в читаемое выражение"""
