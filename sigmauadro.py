@@ -625,10 +625,10 @@ class EvolutionEngine:
                 complexity = self.best_individual.complexity if self.best_individual else 0
                 
                 mode_prefix = "[УПРОЩЕНИЕ] " if simplify_mode else ""
-                sys.stdout.write(f"\r{mode_prefix}Поколение {gen + 1}/{generations}\n")
-                sys.stdout.write(f"{' ' * len(mode_prefix)}Ошибка: {best_err}\n")
-                sys.stdout.write(f"{' ' * len(mode_prefix)}Без улучшений: {self.generations_without_improvement}\n")
-                sys.stdout.write(f"{' ' * len(mode_prefix)}Сложность: {complexity}")
+                print(f"{mode_prefix}Поколение {gen + 1}/{generations}")
+                print(f"{' ' * len(mode_prefix)}Ошибка: {best_err}")
+                print(f"{' ' * len(mode_prefix)}Без улучшений: {self.generations_without_improvement}")
+                print(f"{' ' * len(mode_prefix)}Сложность: {complexity}")
                 sys.stdout.flush()
         
         if display:
