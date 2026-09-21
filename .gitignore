@@ -1,1 +1,26 @@
-(sigmauadro.py)
+```
+# Data files (if they are temporary/intermediate)
+*.txt
+!README.md
+!requirements.txt
+!package.json
+!config.json
+!settings.json
+!environment.yml
+!Dockerfile
+!docker-compose.yml
+!Makefile
+!CMakeLists.txt
+!meson.build
+!setup.cfg
+!pyproject.toml
+!poetry.lock
+!Gemfile
+!Gemfile.lock
+!Pipfile
+!Pipfile.lock
+!Cargo.toml
+!Cargo.lock
+!go.mod
+!go.sum
+```

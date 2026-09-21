@@ -2,6 +2,7 @@
 """
 Sigmauadro - Универсальный эволюционный аппроксиматор
 Основан на чистых мутациях без кроссовера
+Эволюция собирает универсальное решение из минимальных кирпичиков
 """
 
 import random
@@ -59,12 +60,11 @@ class Config:
 
 class Primitive:
     """Базовая операция - кирпичик для построения функций"""
-    def __init__(self, name, func, arity, code, is_numeric=False):
+    def __init__(self, name, func, arity, code):
         self.name = name
         self.func = func
         self.arity = arity
         self.code = code
-        self.is_numeric = is_numeric
     
     def execute(self, args):
         try:
@@ -72,7 +72,8 @@ class Primitive:
         except (ZeroDivisionError, ValueError, OverflowError):
             return Decimal('0')
 
-PRIMITIVES = [
+# Базовые примитивы (неизменяемые)
+BASE_PRIMITIVES = [
     Primitive("add", lambda a, b: a + b, 2, "+"),
     Primitive("sub", lambda a, b: a - b, 2, "-"),
     Primitive("mul", lambda a, b: a * b, 2, "*"),
@@ -87,23 +88,31 @@ PRIMITIVES = [
     Primitive("pow", lambda a, b: Decimal(str(math.pow(float(a), float(b)))) if a > 0 else Decimal('0'), 2, "^"),
 ]
 
-BASE_PRIMITIVE_COUNT = len(PRIMITIVES)
-NUM_CONSTANT_PRIMITIVES = 50
+BASE_PRIMITIVE_COUNT = len(BASE_PRIMITIVES)
 
-def init_constants():
-    """Инициализировать пул констант со случайными значениями"""
-    while len(PRIMITIVES) > BASE_PRIMITIVE_COUNT:
-        PRIMITIVES.pop()
-    for i in range(NUM_CONSTANT_PRIMITIVES):
-        val = Decimal(str(random.uniform(-100, 100)))
-        PRIMITIVES.append(Primitive(f"const_{i}", lambda v=val: v, 0, str(val), is_numeric=True))
+# Типы узлов генома
+NODE_CONST = 0      # Константа со значением
+NODE_PRIM = 1       # Базовый примитив
+NODE_INPUT = 2      # Входная переменная
+
+def get_primitive(idx):
+    """Получить базовый примитив по индексу"""
+    if 0 <= idx < BASE_PRIMITIVE_COUNT:
+        return BASE_PRIMITIVES[idx]
+    return None
 
 # ============================================================================
 # ОСОБЬ (ГЕНЕТИЧЕСКОЕ ПРЕДСТАВЛЕНИЕ)
 # ============================================================================
 
 class Individual:
-    """Особь представляющая функцию в виде дерева операций"""
+    """Особь представляющая функцию в виде дерева операций
+    
+    Геном состоит из узлов трех типов:
+    - NODE_CONST: (NODE_CONST, значение) - константа
+    - NODE_PRIM: (NODE_PRIM, индекс_примитива) - базовая операция
+    - NODE_INPUT: (NODE_INPUT, индекс_входа) - входная переменная
+    """
     
     def __init__(self, genome=None, input_size=1):
         self.genome = genome or []
@@ -112,23 +121,30 @@ class Individual:
         self.complexity = len(self.genome) if genome else 0
     
     def execute(self, inputs):
-        """Выполнить особь на входных данных"""
+        """Выполнить особь на входных данных используя стек"""
         if not self.genome:
             return [Decimal('0')] * max(1, self.input_size)
         
         try:
             stack = list(inputs)
             
-            for prim_idx, arg_count in self.genome:
-                if prim_idx >= len(PRIMITIVES):
-                    continue
+            for node in self.genome:
+                node_type = node[0]
                 
-                prim = PRIMITIVES[prim_idx]
-                args = []
-                for _ in range(arg_count):
-                    args.append(stack.pop() if stack else Decimal('0'))
-                
-                stack.append(prim.execute(args))
+                if node_type == NODE_CONST:
+                    stack.append(node[1])
+                elif node_type == NODE_INPUT:
+                    idx = node[1]
+                    stack.append(inputs[idx] if 0 <= idx < len(inputs) else Decimal('0'))
+                elif node_type == NODE_PRIM:
+                    prim_idx = node[1]
+                    prim = get_primitive(prim_idx)
+                    if prim is None:
+                        continue
+                    args = []
+                    for _ in range(prim.arity):
+                        args.append(stack.pop() if stack else Decimal('0'))
+                    stack.append(prim.execute(args))
             
             if len(stack) < self.input_size:
                 return stack + [Decimal('0')] * (self.input_size - len(stack))
@@ -159,73 +175,96 @@ class Individual:
         return self.error
     
     def mutate(self, mutation_count):
-        """Применить мутации к особи"""
+        """Применить мутации к особи - каждая мутация минимальна"""
         new_genome = copy.deepcopy(self.genome)
         
         for _ in range(mutation_count):
             if not new_genome:
-                prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                new_genome.append((prim_idx, PRIMITIVES[prim_idx].arity))
+                # Добавить первый узел
+                node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
+                if node_type == NODE_PRIM:
+                    new_genome.append((NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1)))
+                elif node_type == NODE_INPUT:
+                    new_genome.append((NODE_INPUT, random.randint(0, max(0, self.input_size - 1))))
+                else:
+                    val = Decimal(str(random.uniform(-100, 100)))
+                    new_genome.append((NODE_CONST, val))
             else:
                 mut_type = random.choice(['replace', 'add', 'remove', 'tweak_const'])
                 
                 if mut_type == 'replace':
                     idx = random.randint(0, len(new_genome) - 1)
-                    prim_idx = random.randint(0, len(PRIMITIVES) - 1)
-                    new_genome[idx] = (prim_idx, PRIMITIVES[prim_idx].arity)
+                    node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
+                    if node_type == NODE_PRIM:
+                        new_genome[idx] = (NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1))
+                    elif node_type == NODE_INPUT:
+                        new_genome[idx] = (NODE_INPUT, random.randint(0, max(0, self.input_size - 1)))
+                    else:
+                        val = Decimal(str(random.uniform(-100, 100)))
+                        new_genome[idx] = (NODE_CONST, val)
                 
                 elif mut_type == 'add':
-                    prim_idx = random.randint(0, len(PRIMITIVES) - 1)
                     pos = random.randint(0, len(new_genome))
-                    new_genome.insert(pos, (prim_idx, PRIMITIVES[prim_idx].arity))
+                    node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
+                    if node_type == NODE_PRIM:
+                        new_genome.insert(pos, (NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1)))
+                    elif node_type == NODE_INPUT:
+                        new_genome.insert(pos, (NODE_INPUT, random.randint(0, max(0, self.input_size - 1))))
+                    else:
+                        val = Decimal(str(random.uniform(-100, 100)))
+                        new_genome.insert(pos, (NODE_CONST, val))
                 
                 elif mut_type == 'remove' and len(new_genome) > 1:
                     idx = random.randint(0, len(new_genome) - 1)
                     new_genome.pop(idx)
                 
                 elif mut_type == 'tweak_const':
-                    const_indices = [i for i, (pidx, _) in enumerate(new_genome) 
-                                    if pidx >= BASE_PRIMITIVE_COUNT]
+                    const_indices = [i for i, n in enumerate(new_genome) if n[0] == NODE_CONST]
                     if const_indices:
                         idx = random.choice(const_indices)
-                        prim_idx, _ = new_genome[idx]
-                        current_val = PRIMITIVES[prim_idx].func()
+                        current_val = new_genome[idx][1]
+                        # Минимальная мутация константы
                         tweak = Decimal(str(random.uniform(-1e-15, 1e-15)))
                         new_val = current_val + tweak
-                        PRIMITIVES[prim_idx] = Primitive(f"const_{prim_idx - BASE_PRIMITIVE_COUNT}", 
-                                                         lambda v=new_val: v, 0, str(new_val), is_numeric=True)
+                        new_genome[idx] = (NODE_CONST, new_val)
         
         return Individual(new_genome, self.input_size)
     
     def to_readable(self):
-        """Преобразовать геном в читаемое представление"""
+        """Преобразовать геном в читаемое выражение"""
         if not self.genome:
             return "f(x) = 0"
         
-        # Построить выражение из дерева
         stack = []
         for node in self.genome:
-            prim_idx, arg_count = node
-            if prim_idx >= len(PRIMITIVES):
-                continue
+            node_type = node[0]
             
-            prim = PRIMITIVES[prim_idx]
-            
-            args = []
-            for _ in range(arg_count):
-                if stack:
-                    args.append(stack.pop())
+            if node_type == NODE_CONST:
+                stack.append(str(node[1]))
+            elif node_type == NODE_INPUT:
+                idx = node[1]
+                if idx == 0:
+                    stack.append("x")
                 else:
-                    args.append("x")
-            
-            if arg_count == 0:
-                expr = prim.code
-            elif arg_count == 1:
-                expr = f"{prim.code}({args[0]})"
-            else:
-                expr = f"({args[1]} {prim.code} {args[0]})"
-            
-            stack.append(expr)
+                    stack.append(f"x{idx}")
+            elif node_type == NODE_PRIM:
+                prim = get_primitive(node[1])
+                if prim is None:
+                    continue
+                args = []
+                for _ in range(prim.arity):
+                    if stack:
+                        args.append(stack.pop())
+                    else:
+                        args.append("x")
+                
+                if prim.arity == 0:
+                    expr = prim.code
+                elif prim.arity == 1:
+                    expr = f"{prim.code}({args[0]})"
+                else:
+                    expr = f"({args[1]} {prim.code} {args[0]})"
+                stack.append(expr)
         
         if stack:
             return f"f(x) = {stack[-1]}"
@@ -234,9 +273,13 @@ class Individual:
     def save(self, filename):
         """Сохранить особь в читаемый файл"""
         with open(filename, 'w') as f:
-            f.write(f"# Sigmauadro - Лучшая особь\n# {self.to_readable()}\n\n")
-            f.write(f"input_size: {self.input_size}\nerror: {self.error}\ncomplexity: {self.complexity}\n\n")
-            f.write("# Геном (индекс_примитива, количество_аргументов)\n")
+            f.write(f"# Sigmauadro - Лучшая особь\n")
+            f.write(f"# {self.to_readable()}\n\n")
+            f.write(f"input_size: {self.input_size}\n")
+            f.write(f"error: {self.error}\n")
+            f.write(f"complexity: {self.complexity}\n\n")
+            f.write("# Геном (тип_узла, значение)\n")
+            f.write("# Типы: 0=константа, 1=примитив, 2=вход\n")
             for node in self.genome:
                 f.write(f"{node[0]} {node[1]}\n")
     
@@ -255,9 +298,13 @@ class Individual:
                     parts = line.split()
                     if len(parts) >= 2:
                         try:
-                            prim_idx = int(parts[0])
-                            arg_count = int(parts[1])
-                            genome.append((prim_idx, arg_count))
+                            node_type = int(parts[0])
+                            val = parts[1]
+                            if node_type == NODE_CONST:
+                                val = Decimal(val)
+                            else:
+                                val = int(val)
+                            genome.append((node_type, val))
                         except ValueError:
                             pass
         
@@ -282,9 +329,6 @@ class EvolutionEngine:
     
     def initialize(self, input_size):
         """Инициализировать внутреннюю популяцию с нуля"""
-        # Инициализировать пул констант при старте
-        init_constants()
-        
         self.inner_population = []
         for _ in range(self.config.population_size):
             individual = Individual([], input_size)
@@ -446,20 +490,22 @@ class EvolutionEngine:
                         parts = line.split()
                         if len(parts) >= 2:
                             try:
-                                prim_idx = int(parts[0])
-                                arg_count = int(parts[1])
-                                current_genome.append((prim_idx, arg_count))
+                                node_type = int(parts[0])
+                                val = parts[1]
+                                if node_type == NODE_CONST:
+                                    val = Decimal(val)
+                                else:
+                                    val = int(val)
+                                current_genome.append((node_type, val))
                             except ValueError:
                                 pass
                     elif line.startswith('error:') or line.startswith('complexity:'):
-                        # Конец особи - сохранить если есть геном
                         if current_genome:
                             ind = Individual(current_genome, current_input_size)
-                            ind.evaluate(self.data_pairs)  # Вычислить ошибку
+                            ind.evaluate(self.data_pairs)
                             population.append(ind)
                             current_genome = []
         
-        # Добавить последнюю особь
         if current_genome:
             ind = Individual(current_genome, current_input_size)
             ind.evaluate(self.data_pairs)
