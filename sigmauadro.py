@@ -546,16 +546,19 @@ class EvolutionEngine:
                 
                 if simplify_mode:
                     # Режим упрощения: снижаем сложность при полном сохранении ошибки
-                    # Допускается только снижение ошибки или сохранение на прежнем уровне
-                    if offspring.error < parent.error:
-                        # Потомок лучше по ошибке - принимаем
-                        self.inner_population[i] = offspring
-                        parent = offspring
-                    elif offspring.error == parent.error and offspring.complexity < parent.complexity:
-                        # Ошибка та же, но потомок проще - принимаем
-                        self.inner_population[i] = offspring
-                        parent = offspring
-                    # В остальных случаях отклоняем (включая если ошибка хоть чуть-чуть выше)
+                    # Критерий: ошибка НЕ должна возрасти НИ НА ДОЛЮ
+                    if offspring.error <= parent.error:
+                        # Ошибка не ухудшилась - проверяем сложность
+                        if offspring.complexity < parent.complexity:
+                            # Потомок проще при той же или лучшей ошибке - принимаем
+                            self.inner_population[i] = offspring
+                            parent = offspring
+                        elif offspring.error < parent.error:
+                            # Потомок лучше по ошибке (даже если сложнее) - принимаем
+                            # Это нужно чтобы сначала найти хорошее решение
+                            self.inner_population[i] = offspring
+                            parent = offspring
+                        # Если ошибка равна и сложность не меньше - отклоняем
                 else:
                     # Обычный режим: потомок должен быть строго лучше по ошибке
                     if offspring.error < parent.error:
@@ -579,7 +582,7 @@ class EvolutionEngine:
             if current_best.error < prev_best_error:
                 self.best_individual = copy.deepcopy(current_best)
                 self.generations_without_improvement = 0
-            elif current_best.error == prev_best_error and current_best.complexity < self.best_individual.complexity:
+            elif current_best.error == prev_best_error and current_best.complexity < prev_best_complexity:
                 self.best_individual = copy.deepcopy(current_best)
                 self.generations_without_improvement = 0
         
