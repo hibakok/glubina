@@ -1,1 +1,21 @@
-(data_multi.txt is just a data file, not a build artifact or dependency, so no need to ignore)
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+```
