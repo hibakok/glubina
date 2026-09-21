@@ -754,11 +754,27 @@ def main_menu():
                 print("\nВыберите режим эволюции:")
                 print("1. Обычная эволюция")
                 print("2. Эволюция на упрощение особи")
-                mode_choice = input("Ваш выбор (1 или 2): ").strip()
                 
-                simplify_mode = (mode_choice == '2')
+                # Гарантированная валидация выбора режима
+                simplify_mode = False
+                while True:
+                    mode_choice = input("Ваш выбор (1 или 2): ").strip()
+                    if mode_choice == '1':
+                        simplify_mode = False
+                        break
+                    elif mode_choice == '2':
+                        simplify_mode = True
+                        break
+                    print("Неверный выбор. Введите 1 или 2.")
                 
-                gens = int(input("Сколько поколений эволюции прогонять? ").strip())
+                # Запрос количества поколений
+                gens_input = input("Сколько поколений эволюции прогонять? ").strip()
+                try:
+                    gens = int(gens_input)
+                except ValueError:
+                    print("Некорректное число поколений")
+                    continue
+                
                 if gens > 0:
                     print("\nЗапуск эволюции...")
                     engine.run_evolution(gens, simplify_mode=simplify_mode)
@@ -768,8 +784,10 @@ def main_menu():
                         print(f"Лучшая особь: {engine.best_individual.to_readable()}")
                 else:
                     print("Количество поколений должно быть положительным")
-            except ValueError:
-                print("Некорректное число")
+            except EOFError:
+                print("\nПрервано пользователем")
+            except KeyboardInterrupt:
+                print("\nПрервано пользователем")
         
         elif choice == '2':
             engine.test_best()
