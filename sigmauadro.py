@@ -534,7 +534,7 @@ class EvolutionEngine:
         """Провести одно поколение эволюции
         
         simplify_mode: если True, эволюция направлена на упрощение особи
-                       при ПОЛНОМ сохранении ошибки (не повышать ни на долю)
+                       Приоритет на снижение сложности, ошибка вторична
         """
         if not self.inner_population or not self.data_pairs:
             return
@@ -545,20 +545,19 @@ class EvolutionEngine:
                 offspring.evaluate(self.data_pairs)
                 
                 if simplify_mode:
-                    # Режим упрощения: снижаем сложность при полном сохранении ошибки
-                    # Критерий: ошибка НЕ должна возрасти НИ НА ДОЛЮ
-                    if offspring.error <= parent.error:
-                        # Ошибка не ухудшилась - проверяем сложность
-                        if offspring.complexity < parent.complexity:
-                            # Потомок проще при той же или лучшей ошибке - принимаем
-                            self.inner_population[i] = offspring
-                            parent = offspring
-                        elif offspring.error < parent.error:
-                            # Потомок лучше по ошибке (даже если сложнее) - принимаем
-                            # Это нужно чтобы сначала найти хорошее решение
-                            self.inner_population[i] = offspring
-                            parent = offspring
-                        # Если ошибка равна и сложность не меньше - отклоняем
+                    # РЕЖИМ УПРОЩЕНИЯ: приоритет на сложность
+                    # Потомок принимается если:
+                    # 1. Его сложность МЕНЬШЕ родительской (главный критерий)
+                    # 2. При этом ошибка не бесконечность
+                    # Ошибка может быть ХУЖЕ родительской - это допустимо
+                    if offspring.complexity < parent.complexity and offspring.error != Decimal('inf'):
+                        self.inner_population[i] = offspring
+                        parent = offspring
+                    # Также принимаем если ошибка ЛУЧШЕ (даже если сложность такая же или больше)
+                    # Это позволяет найти хорошее решение перед упрощением
+                    elif offspring.error < parent.error:
+                        self.inner_population[i] = offspring
+                        parent = offspring
                 else:
                     # Обычный режим: потомок должен быть строго лучше по ошибке
                     if offspring.error < parent.error:
@@ -577,6 +576,8 @@ class EvolutionEngine:
             elif current_best.error == prev_best_error and current_best.complexity < prev_best_complexity:
                 self.best_individual = copy.deepcopy(current_best)
                 self.generations_without_improvement = 0
+            # ВАЖНО: в режиме упрощения счетчик без улучшений НЕ сбрасывается если сложность уменьшилась
+            # но ошибка осталась той же - это считается улучшением
         else:
             # Обычный режим: приоритет на ошибку, затем сложность
             if current_best.error < prev_best_error:
@@ -587,7 +588,19 @@ class EvolutionEngine:
                 self.generations_without_improvement = 0
         
         self.generations_run += 1
-        self.generations_without_improvement += 1
+        # Сбрасываем счетчик только если действительно было улучшение
+        if simplify_mode:
+            # В режиме упрощения считаем улучшением и снижение сложности при равной ошибке
+            if current_best.error < prev_best_error or (current_best.error == prev_best_error and current_best.complexity < prev_best_complexity):
+                self.generations_without_improvement = 0
+            else:
+                self.generations_without_improvement += 1
+        else:
+            if current_best.error < prev_best_error or (current_best.error == prev_best_error and current_best.complexity < prev_best_complexity):
+                self.generations_without_improvement = 0
+            else:
+                self.generations_without_improvement += 1
+        
         self.best_error_history.append(self.best_individual.error if self.best_individual else Decimal('inf'))
     
     def run_evolution(self, generations, display=True, simplify_mode=False):
