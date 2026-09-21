@@ -535,6 +535,11 @@ class EvolutionEngine:
         
         simplify_mode: если True, эволюция направлена на упрощение особи
                        Приоритет на снижение сложности, ошибка вторична
+                       
+        Логика режима упрощения (СИТУАЦИЯ 2 из ТЗ):
+        - Если особь проще - она более приспособлена (даже если ошибка хуже)
+        - Если особь сложнее - она НЕ приспособлена (даже если ошибка лучше)
+        - При равной сложности - сравниваем по ошибке
         """
         if not self.inner_population or not self.data_pairs:
             return
@@ -544,25 +549,28 @@ class EvolutionEngine:
                 offspring = parent.mutate(self.config.mutation_count)
                 offspring.evaluate(self.data_pairs)
                 
+                replace_parent = False
+                
                 if simplify_mode:
-                    # РЕЖИМ УПРОЩЕНИЯ: приоритет на сложность
-                    # Потомок принимается если:
-                    # 1. Его сложность МЕНЬШЕ родительской (главный критерий)
-                    # 2. При этом ошибка не бесконечность
-                    # Ошибка может быть ХУЖЕ родительской - это допустимо
-                    if offspring.complexity < parent.complexity and offspring.error != Decimal('inf'):
-                        self.inner_population[i] = offspring
-                        parent = offspring
-                    # Также принимаем если ошибка ЛУЧШЕ (даже если сложность такая же или больше)
-                    # Это позволяет найти хорошее решение перед упрощением
-                    elif offspring.error < parent.error:
-                        self.inner_population[i] = offspring
-                        parent = offspring
+                    # РЕЖИМ УПРОЩЕНИЯ: главный критерий - СЛОЖНОСТЬ
+                    if offspring.complexity < parent.complexity:
+                        # Потомок проще - принимаем (ошибка может быть любой)
+                        replace_parent = True
+                    elif offspring.complexity == parent.complexity:
+                        # Сложность равна - сравниваем по ошибке
+                        if offspring.error < parent.error:
+                            replace_parent = True
+                    # Если потомок сложнее - НЕ принимаем (даже если ошибка лучше)
                 else:
-                    # Обычный режим: потомок должен быть строго лучше по ошибке
+                    # Обычный режим: приоритет на ошибку, затем сложность
                     if offspring.error < parent.error:
-                        self.inner_population[i] = offspring
-                        parent = offspring
+                        replace_parent = True
+                    elif offspring.error == parent.error and offspring.complexity < parent.complexity:
+                        replace_parent = True
+                
+                if replace_parent:
+                    self.inner_population[i] = offspring
+                    parent = offspring
         
         current_best = min(self.inner_population, key=lambda x: x.error if x.error is not None else Decimal('inf'))
         prev_best_error = self.best_individual.error if self.best_individual else Decimal('inf')
