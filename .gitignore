@@ -1,26 +1,39 @@
 ```
-# Data files (if they are temporary/intermediate)
-*.txt
-!README.md
-!requirements.txt
-!package.json
-!config.json
-!settings.json
-!environment.yml
-!Dockerfile
-!docker-compose.yml
-!Makefile
-!CMakeLists.txt
-!meson.build
-!setup.cfg
-!pyproject.toml
-!poetry.lock
-!Gemfile
-!Gemfile.lock
-!Pipfile
-!Pipfile.lock
-!Cargo.toml
-!Cargo.lock
-!go.mod
-!go.sum
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+.venv/
+venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+
+# Dependencies
+node_modules/
 ```
