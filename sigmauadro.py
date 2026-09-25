@@ -188,64 +188,40 @@ class Individual:
         self.error = total_error / count if count > 0 else Decimal('inf')
         return self.error
     
+    def _rand_node(self):
+        """Случайный узел генома (примитив/вход/константа) - единая точка генерации"""
+        t = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
+        if t == NODE_PRIM:
+            return (t, random.randint(0, BASE_PRIMITIVE_COUNT - 1))
+        if t == NODE_INPUT:
+            return (t, random.randint(0, max(0, self.input_size - 1)))
+        return (t, Decimal(str(random.uniform(-100, 100))))
+
     def mutate(self, mutation_count):
-        """Применить мутации к особи - каждая мутация минимальна"""
-        new_genome = copy.deepcopy(self.genome)
-        
+        """Применить мутации к особи - каждая мутация минимальна по масштабу"""
+        # Узлы — неизменяемые кортежи, поэтому копия генома поверхностная (быстро)
+        g = self.genome[:]
         for _ in range(mutation_count):
-            if not new_genome:
-                node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
-                if node_type == NODE_PRIM:
-                    new_genome.append((NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1)))
-                elif node_type == NODE_INPUT:
-                    new_genome.append((NODE_INPUT, random.randint(0, max(0, self.input_size - 1))))
-                else:
-                    val = Decimal(str(random.uniform(-100, 100)))
-                    new_genome.append((NODE_CONST, val))
-            else:
-                # Увеличить вероятность add для роста сложности
-                weights = [0.35, 0.35, 0.15, 0.15]  # replace, add, remove, tweak_const
-                mut_type = random.choices(['replace', 'add', 'remove', 'tweak_const'], weights=weights)[0]
-                
-                if mut_type == 'replace':
-                    idx = random.randint(0, len(new_genome) - 1)
-                    node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
-                    if node_type == NODE_PRIM:
-                        new_genome[idx] = (NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1))
-                    elif node_type == NODE_INPUT:
-                        new_genome[idx] = (NODE_INPUT, random.randint(0, max(0, self.input_size - 1)))
-                    else:
-                        val = Decimal(str(random.uniform(-100, 100)))
-                        new_genome[idx] = (NODE_CONST, val)
-                
-                elif mut_type == 'add':
-                    pos = random.randint(0, len(new_genome))
-                    node_type = random.choice([NODE_PRIM, NODE_INPUT, NODE_CONST])
-                    if node_type == NODE_PRIM:
-                        new_genome.insert(pos, (NODE_PRIM, random.randint(0, BASE_PRIMITIVE_COUNT - 1)))
-                    elif node_type == NODE_INPUT:
-                        new_genome.insert(pos, (NODE_INPUT, random.randint(0, max(0, self.input_size - 1))))
-                    else:
-                        val = Decimal(str(random.uniform(-100, 100)))
-                        new_genome.insert(pos, (NODE_CONST, val))
-                
-                elif mut_type == 'remove' and len(new_genome) > 1:
-                    idx = random.randint(0, len(new_genome) - 1)
-                    new_genome.pop(idx)
-                
-                elif mut_type == 'tweak_const':
-                    const_indices = [i for i, n in enumerate(new_genome) if n[0] == NODE_CONST]
-                    if const_indices:
-                        idx = random.choice(const_indices)
-                        current_val = new_genome[idx][1]
-                        # Адаптивный размер твика - больше для больших значений
-                        scale = max(abs(current_val), Decimal('1')) * Decimal('1e-10')
-                        tweak = Decimal(str(random.uniform(-float(scale), float(scale))))
-                        new_val = current_val + tweak
-                        new_genome[idx] = (NODE_CONST, new_val)
-        
-        ind = Individual(new_genome, self.input_size, self.output_size)
-        return ind
+            if not g:
+                g.append(self._rand_node())
+                continue
+            # Веса: замена 0.35, добавление 0.35, удаление 0.15, подкрутка константы 0.15
+            m = random.choices(['replace', 'add', 'remove', 'tweak'], weights=[.35, .35, .15, .15])[0]
+            if m == 'replace':
+                g[random.randrange(len(g))] = self._rand_node()
+            elif m == 'add':
+                g.insert(random.randrange(len(g) + 1), self._rand_node())
+            elif m == 'remove':
+                if len(g) > 1:
+                    g.pop(random.randrange(len(g)))
+            else:  # tweak: сдвиг случайной константы на величину ~1e-10 от её масштаба
+                ci = [i for i, n in enumerate(g) if n[0] == NODE_CONST]
+                if ci:
+                    i = random.choice(ci)
+                    v = g[i][1]
+                    s = max(abs(v), Decimal(1)) * Decimal('1e-10')
+                    g[i] = (NODE_CONST, v + Decimal(str(random.uniform(-float(s), float(s)))))
+        return Individual(g, self.input_size, self.output_size)
     
     def to_readable(self):
         """Преобразовать геном в читаемое выражение с поддержкой multi-input/output"""
