@@ -1,0 +1,123 @@
+# Популяция Sigmauadro
+# Особей: 20
+
+
+## Особь 1
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 2
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 3
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 4
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 5
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 6
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 7
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 8
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 9
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 10
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 11
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 12
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 13
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 14
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 15
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 16
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 17
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 18
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 19
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
+
+## Особь 20
+input_size: 3
+output_size: 1
+error: 12
+complexity: 0
