@@ -122,16 +122,11 @@ class Individual:
         self.input_size = input_size
         self.output_size = output_size
         self.error = None
-        self._complexity = len(self.genome) if genome else 0
     
     @property
     def complexity(self):
-        """Кэшированная сложность особи"""
-        return self._complexity
-    
-    def _update_complexity(self):
-        """Обновить сложность после изменения генома"""
-        self._complexity = len(self.genome)
+        """Сложность = число узлов генома; считается на лету, устареть не может"""
+        return len(self.genome)
     
     def execute(self, inputs):
         """Выполнить особь на входных данных используя стек
@@ -250,7 +245,6 @@ class Individual:
                         new_genome[idx] = (NODE_CONST, new_val)
         
         ind = Individual(new_genome, self.input_size, self.output_size)
-        ind._update_complexity()
         return ind
     
     def to_readable(self):
